@@ -1,0 +1,14 @@
+flowchart TD
+  intake["Project Intake"] --> scan["Local Worker Scan"]
+  scan --> evidence["Normalized Evidence Store"]
+  evidence --> discovery["Discovery + Infra + Data Agents"]
+  evidence --> security["Security + Risk Agents"]
+  evidence --> cloud["Cloud Recommendation + Cost Agents"]
+  discovery --> aggregate["Final Recommendation Aggregator"]
+  security --> aggregate
+  cloud --> aggregate
+  aggregate --> critics["Safety + Citation Critics"]
+  critics --> reports["Reports + Artifacts"]
+  critics --> scenarios["What-If Scenarios"]
+  reports --> approvals["Planning Approval Gate"]
+  approvals --> audit["Audit Trail"]

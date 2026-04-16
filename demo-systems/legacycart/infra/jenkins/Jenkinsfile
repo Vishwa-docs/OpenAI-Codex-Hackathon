@@ -1,0 +1,21 @@
+pipeline {
+  agent any
+  environment {
+    DEPLOY_KEY = credentials('legacycart-deploy-key')
+    AWS_ACCESS_KEY_ID = 'REDACTED_FAKE_AWS_ACCESS_KEY'
+    AWS_SECRET_ACCESS_KEY = 'REDACTED_FAKE_AWS_SECRET_KEY'
+  }
+  stages {
+    stage('Build') {
+      steps {
+        sh 'echo building legacycart'
+      }
+    }
+    stage('Deploy') {
+      steps {
+        sh 'echo deploying with static credentials'
+      }
+    }
+  }
+}
+

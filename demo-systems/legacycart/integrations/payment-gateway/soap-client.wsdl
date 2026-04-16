@@ -1,0 +1,4 @@
+<definitions name="LegacyCartPayments">
+  <documentation>SOAP gateway requires allowlisted IPs and basic auth.</documentation>
+</definitions>
+

@@ -1,0 +1,18 @@
+app:
+  name: legacycart
+  environment: production
+  apiBaseUrl: https://api.legacycart.local
+datasource:
+  url: jdbc:postgresql://postgres.legacycart.local:5432/legacycart
+  username: legacycart_app
+  password: "REDACTED_FAKE_PROD_PASSWORD"
+  sslMode: disable
+storage:
+  invoicePath: /mnt/shared/invoices
+security:
+  sessionSecret: "REDACTED_FAKE_SESSION_SECRET"
+  authHeaderLogging: true
+runtime:
+  jdk: "Java 8"
+  framework: "Spring Boot 2.6"
+

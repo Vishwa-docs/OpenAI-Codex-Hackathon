@@ -1,0 +1,16 @@
+flowchart LR
+  consultant["MSP Consultant"] --> web["Cloud Migration Cockpit Web App"]
+  stakeholder["Business Stakeholder"] --> web
+  architect["Solution Architect"] --> web
+  web --> api["FastAPI Control Plane"]
+  api --> postgres["PostgreSQL"]
+  api --> redis["Redis"]
+  api --> minio["MinIO / S3-Compatible Storage"]
+  api --> registry["Agent + Tool Registry"]
+  api --> reports["Report + Artifact Generator"]
+  api --> worker["Local Worker / Scanner"]
+  worker --> legacy["Demo LegacyCart System"]
+  api --> approval["Approval + Audit Engine"]
+  api --> swarm["Assessment Swarm"]
+  swarm --> reports
+  swarm --> approval

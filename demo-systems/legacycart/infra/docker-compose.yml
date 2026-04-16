@@ -1,0 +1,20 @@
+version: "3.9"
+services:
+  app:
+    image: legacycart/backend:1.0
+    environment:
+      JDBC_URL: jdbc:postgresql://postgres:5432/legacycart?sslmode=disable
+      APP_SECRET: "REDACTED_FAKE_APP_SECRET"
+    volumes:
+      - /mnt/shared/invoices:/mnt/shared/invoices
+    depends_on:
+      - postgres
+  postgres:
+    image: postgres:9.6
+    environment:
+      POSTGRES_DB: legacycart
+      POSTGRES_USER: legacycart_app
+      POSTGRES_PASSWORD: "REDACTED_FAKE_DB_PASSWORD"
+  redis:
+    image: redis:6
+

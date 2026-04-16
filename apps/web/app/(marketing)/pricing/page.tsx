@@ -2,9 +2,24 @@ import { Badge, Card, SectionHeader } from "@/components/ui";
 import Link from "next/link";
 
 const plans = [
-  { name: "Pilot", hint: "For a single assessment engagement", price: "Custom", features: ["One workspace", "Evaluation views", "PDF export", "Local stack for demos"] },
-  { name: "Consultancy", hint: "For an MSP delivery team", price: "Custom", features: ["Multi-project cockpit", "Approval gates", "Connector registry", "Scenario and report center"] },
-  { name: "Enterprise", hint: "For internal migration offices", price: "Talk to us", features: ["Advanced tenancy", "Execution adapters", "Custom eval packs", "Control-plane extensions"] }
+  {
+    name: "Pilot",
+    hint: "For one migration engagement or internal proof point",
+    price: "Custom",
+    features: ["Public SaaS product surface", "One dashboard workspace", "Local AI runtime setup", "Reports and approvals"]
+  },
+  {
+    name: "Consultancy",
+    hint: "For MSP and delivery teams running multiple workstreams",
+    price: "Custom",
+    features: ["Multi-project dashboard", "Question and inference workflows", "Scenario and report center", "Connector governance"]
+  },
+  {
+    name: "Enterprise",
+    hint: "For migration offices standardizing internal programs",
+    price: "Talk to us",
+    features: ["Platform rollout support", "Local runtime controls", "Advanced governance and approvals", "Custom workflow extensions"]
+  }
 ];
 
 export default function PricingPage() {
@@ -12,11 +27,11 @@ export default function PricingPage() {
     <main className="mx-auto max-w-7xl px-6 pb-20 pt-14 lg:px-8">
       <SectionHeader
         eyebrow="Pricing"
-        title="Placeholder pricing with room for the real commercial model."
-        description="The MVP keeps pricing simple so the product can focus on proving value and earning the next implementation step."
+        title="Commercial framing for a product site, not a deployment checklist."
+        description="The public pricing surface should describe how teams adopt the platform, while the actual AI runtime and MTC work happen after onboarding inside the dashboard."
         action={
           <Link href="/demo" className="rounded-full border border-white/15 px-5 py-3 text-sm font-medium text-white">
-            Book demo
+            Run interactive demo
           </Link>
         }
       />

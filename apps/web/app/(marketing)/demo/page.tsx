@@ -1,66 +1,114 @@
-import { Card, SectionHeader } from "@/components/ui";
+﻿import { BackendUnavailableError, loadProjectDataset } from "@/lib/api";
+import { createMockProjectDataset } from "@/lib/mock-data";
+import { DemoWorkflowForm } from "@/components/demo-workflow-form";
+import { Badge, SectionHeader } from "@/components/ui";
 import Link from "next/link";
 
-const steps = [
-  "Open the LegacyCart project from the dashboard.",
-  "Review the seeded findings, especially secrets, logging, and deployment risk.",
-  "Compare AWS, GCP, and Azure from the provider tab.",
-  "Inspect the cost, ROI, and risk screens for approval-ready framing.",
-  "Ask the chat assistant to explain sequencing options.",
-  "Export the executive PDF or switch into planning once the decision is clear."
+const stages = [
+  {
+    title: "Paste target repo",
+    body: "Use any GitHub repository URL you control. The workflow normalizes the branch target before it starts.",
+  },
+  {
+    title: "Seed LegacyCart",
+    body: "We package the bundled MTC dummy project into a temporary git workspace so the target repo gets believable content.",
+  },
+  {
+    title: "Push or simulate",
+    body: "Leave the token blank to run a safe simulation, or add one to perform the live branch push.",
+  },
+  {
+    title: "Open cockpit",
+    body: "The workflow registers the source connection and queues a local-worker assessment so the cockpit has fresh activity.",
+  },
 ];
 
-const proofPoints = [
-  { label: "Readiness", value: "52%", detail: "The project is intentionally viable but blocked." },
-  { label: "Critical blockers", value: "4", detail: "Secrets, logging, IAM, and batch coupling all surface immediately." },
-  { label: "Report packs", value: "8", detail: "Executive, technical, cost, risk, architecture, waves, rollback, and ops." }
+const checklist = [
+  "GitHub URL",
+  "Optional PAT for live branch push",
+  "Seeded LegacyCart project bundled in the repo",
+  "Automatic source registration and assessment kickoff",
 ];
 
-export default function DemoPage() {
+export default async function DemoPage() {
+  let project = createMockProjectDataset("legacycart");
+  let liveDataUnavailable = false;
+
+  try {
+    project = await loadProjectDataset("legacycart");
+  } catch (error) {
+    if (error instanceof BackendUnavailableError) {
+      liveDataUnavailable = true;
+    } else {
+      throw error;
+    }
+  }
+
   return (
     <main className="mx-auto max-w-7xl px-6 pb-20 pt-14 lg:px-8">
-      <SectionHeader
-        eyebrow="Demo"
-        title="A demo flow that shows the product in under five minutes."
-        description="The seeded LegacyCart project is intentionally messy so the cockpit has useful evidence to surface immediately."
-        action={
-          <Link href="/projects/legacycart" className="rounded-full bg-sky-400 px-5 py-3 text-sm font-medium text-slate-950">
-            Start demo
-          </Link>
-        }
-      />
-      <div className="mt-8 grid gap-4 lg:grid-cols-[1fr_0.8fr]">
-        <Card className="space-y-4">
-          <h2 className="text-lg font-medium text-white">Suggested presenter flow</h2>
+      <div className="grid gap-10 lg:grid-cols-[1fr_0.95fr]">
+        <div>
+          <SectionHeader
+            eyebrow="Interactive demo"
+            title="Push the MTC dummy project into a GitHub repo and hand off into the cockpit."
+            description="This page is intentionally task-first. It turns the bundled LegacyCart seed into a single demonstrable workflow instead of a presenter script."
+            action={
+              <Link href="/projects/legacycart" className="rounded-full border border-white/10 px-5 py-3 text-sm font-medium text-white">
+                Skip to cockpit
+              </Link>
+            }
+          />
+
+          <div className="mt-8 rounded-[2rem] border border-white/10 bg-white/[0.04] p-6">
+            <div className="flex flex-wrap items-center gap-3">
+              <Badge tone="amber">{`${project.overview.readinessScore}% readiness`}</Badge>
+              <Badge tone="rose">{`${project.findings.filter((item) => item.severity === "critical" || item.severity === "high").length} high-risk blockers`}</Badge>
+              <Badge tone="green">{project.overview.recommendedProvider}</Badge>
+            </div>
+            <h2 className="mt-5 text-3xl font-semibold text-white">{project.projectName}</h2>
+            <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-300">{project.overview.narrative}</p>
+            {liveDataUnavailable ? (
+              <div className="mt-5 rounded-[1.4rem] border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
+                The live control plane is unavailable right now, so this page is showing the bundled demo dataset until the local stack comes back up.
+              </div>
+            ) : null}
+            <div className="mt-8 grid gap-4 md:grid-cols-2">
+              {stages.map((stage) => (
+                <div key={stage.title} className="rounded-[1.5rem] border border-white/10 bg-slate-950/35 p-4">
+                  <h3 className="text-lg font-medium text-white">{stage.title}</h3>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">{stage.body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-4 rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(56,189,248,0.12),rgba(15,23,42,0.32))] p-6">
+          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">What the workflow covers</p>
+          <h2 className="text-3xl font-semibold text-white">One page replaces the old demo script.</h2>
           <div className="space-y-3">
-            {steps.map((step, index) => (
-              <div key={step} className="flex gap-4 rounded-2xl bg-white/5 px-4 py-3 text-sm leading-6 text-slate-300">
-                <span className="font-semibold text-sky-200">{index + 1}</span>
-                <span>{step}</span>
+            {checklist.map((item) => (
+              <div key={item} className="rounded-[1.4rem] border border-white/10 bg-white/[0.05] px-4 py-3 text-sm leading-6 text-slate-200">
+                {item}
               </div>
             ))}
           </div>
-        </Card>
-        <Card className="space-y-3">
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Demo seed</p>
-          <h2 className="text-2xl font-semibold text-white">LegacyCart</h2>
-          <p className="text-sm leading-6 text-slate-300">
-            A retail order-management monolith with hardcoded secrets, sensitive logs, a brittle CI chain, and shared file storage.
+          <p className="text-sm leading-7 text-slate-300">
+            The seeded project still opens into the same evidence-backed cockpit, with findings, reports, connectors,
+            approvals, and scenario analysis already wired up.
           </p>
-          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 text-sm leading-6 text-slate-300">
-            It looks believable to technical and non-technical viewers because the cockpit surfaces both a concise recommendation and the underlying evidence trail.
+          <div className="rounded-[1.6rem] border border-white/10 bg-slate-950/40 p-4 text-sm leading-6 text-slate-300">
+            Recommended handoff: run the workflow here, then open <span className="font-medium text-white">Connectors</span>,{" "}
+            <span className="font-medium text-white">Overview</span>, and <span className="font-medium text-white">Findings</span>{" "}
+            in the cockpit.
           </div>
-        </Card>
+        </div>
       </div>
-      <div className="mt-8 grid gap-4 lg:grid-cols-3">
-        {proofPoints.map((point) => (
-          <Card key={point.label} className="space-y-2">
-            <p className="text-xs uppercase tracking-[0.28em] text-slate-400">{point.label}</p>
-            <p className="text-3xl font-semibold text-white">{point.value}</p>
-            <p className="text-sm leading-6 text-slate-300">{point.detail}</p>
-          </Card>
-        ))}
+
+      <div className="mt-10">
+        <DemoWorkflowForm />
       </div>
     </main>
   );
 }
+

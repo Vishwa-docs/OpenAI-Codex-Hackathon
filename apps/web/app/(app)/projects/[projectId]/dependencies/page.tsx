@@ -1,7 +1,7 @@
 import { EvidenceList } from "@/components/section-page";
 import { Card, SectionHeader } from "@/components/ui";
 import { DependencyGraph } from "@/components/visualizations";
-import { loadProjectDataset } from "@/lib/api";
+import { loadProjectDataset } from "@/lib/app-api";
 
 export default async function DependenciesPage({
   params
@@ -15,7 +15,7 @@ export default async function DependenciesPage({
     <div className="space-y-6">
       <SectionHeader
         eyebrow="Dependency graph"
-        title="Legacy topology and evidence graph"
+        title="Workspace topology and evidence graph"
         description="The cockpit normalizes service, job, database, storage, and integration dependencies before recommending a migration path."
       />
       <DependencyGraph nodes={project.dependencyNodes} edges={project.dependencyEdges} />
@@ -24,7 +24,7 @@ export default async function DependenciesPage({
         <div className="space-y-2 text-sm leading-6 text-slate-300">
           <p>{project.dependencyNodes.length} normalized nodes across app, data, storage, delivery, and integration surfaces.</p>
           <p>{project.dependencyEdges.length} graph edges tie findings back to concrete dependencies and deployment behavior.</p>
-          <p>The first MVP keeps this graph read-only so the assessment remains stable and explainable.</p>
+          <p>This graph stays read-only so the assessment remains stable and explainable.</p>
         </div>
       </Card>
       <EvidenceList evidence={project.evidence.slice(0, 6)} />

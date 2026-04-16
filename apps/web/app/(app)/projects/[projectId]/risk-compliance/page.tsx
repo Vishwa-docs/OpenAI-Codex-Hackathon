@@ -1,6 +1,6 @@
 import { BulletList } from "@/components/section-page";
 import { Card, MetricCard, PillList, SectionHeader } from "@/components/ui";
-import { loadProjectDataset } from "@/lib/api";
+import { loadProjectDataset } from "@/lib/app-api";
 
 export default async function RiskCompliancePage({
   params
@@ -19,7 +19,7 @@ export default async function RiskCompliancePage({
       />
       <div className="grid gap-4 xl:grid-cols-3">
         <MetricCard label="Overall risk" value={project.riskModel.overallRisk} detail="Current readiness before remediation." />
-        <MetricCard label="RPO target" value={project.riskModel.rpo} detail="Seeded transactional recovery posture." />
+        <MetricCard label="RPO target" value={project.riskModel.rpo} detail="Current transactional recovery posture." />
         <MetricCard label="RTO target" value={project.riskModel.rto} detail="Expected recovery window for order intake." />
       </div>
       <div className="grid gap-4 xl:grid-cols-3">

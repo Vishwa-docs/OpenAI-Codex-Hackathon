@@ -7,8 +7,8 @@ import type {
   ScenarioDiff
 } from "@contracts/index";
 import { Badge, Card, MetricCard, PillList } from "@/components/ui";
-import type { ConnectorItem, EvalSummary, ProjectDataset } from "@/lib/mock-data";
 import { formatConfidence, formatDateTime, formatPercent } from "@/lib/format";
+import type { ConnectorItem, EvalSummary, ProjectDataset } from "@/lib/project-dataset";
 
 export function ExecutiveRibbon({
   overview,
@@ -172,7 +172,15 @@ export function CommandCenterPanel({
                     <p className="text-sm font-medium text-white">{connector.name}</p>
                     <p className="mt-1 text-sm text-slate-300">{connector.details}</p>
                   </div>
-                  <Badge tone={connector.status === "connected" ? "green" : connector.status === "proposed" ? "amber" : "slate"}>
+                  <Badge
+                    tone={
+                      connector.status === "connected"
+                        ? "green"
+                        : connector.status === "proposed" || connector.status === "needs_configuration"
+                          ? "amber"
+                          : "slate"
+                    }
+                  >
                     {connector.status}
                   </Badge>
                 </div>

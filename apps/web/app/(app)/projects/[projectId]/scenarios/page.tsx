@@ -1,7 +1,7 @@
 import { BulletList, ScenarioCards } from "@/components/section-page";
 import { Card, SectionHeader } from "@/components/ui";
 import { ScenarioComparison } from "@/components/visualizations";
-import { loadProjectDataset } from "@/lib/api";
+import { loadProjectDataset } from "@/lib/app-api";
 
 export default async function ScenariosPage({
   params

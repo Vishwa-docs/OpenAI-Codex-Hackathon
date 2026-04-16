@@ -1,6 +1,6 @@
 import { BulletList } from "@/components/section-page";
 import { Card, SectionHeader } from "@/components/ui";
-import { loadProjectDataset } from "@/lib/api";
+import { loadProjectDataset } from "@/lib/app-api";
 
 export default async function ProjectSettingsPage({
   params
@@ -24,7 +24,7 @@ export default async function ProjectSettingsPage({
             items={[
               `Project status: ${project.overview.status}`,
               `Recommended provider: ${project.overview.recommendedProvider}`,
-              "Execution adapters remain disabled in the seeded MVP"
+              "Execution adapters remain disabled until approval"
             ]}
           />
         </Card>

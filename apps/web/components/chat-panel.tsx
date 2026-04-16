@@ -1,42 +1,85 @@
 "use client";
 
+import type { ChatMessage } from "@contracts/index";
 import { Badge, Card, SectionHeader } from "@/components/ui";
 import { formatDateTime } from "@/lib/format";
-import type { ChatMessage } from "@/lib/mock-data";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 
-function seededReply(input: string) {
-  const normalized = input.toLowerCase();
-  if (normalized.includes("database first")) {
-    return "Database-first is viable only after the hardcoded secret and log redaction issues are remediated. The cockpit keeps the recommendation at re-architect-first for now.";
-  }
-  if (normalized.includes("provider")) {
-    return "AWS remains the lead provider in the seeded assessment because the workload needs a strong landing zone, IAM, and managed database path.";
-  }
-  return "I can answer from the seeded dossier and evidence set. The key blocker is the security posture, followed by the brittle ops model and external integration constraints.";
-}
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
 export function ChatPanel({
   messages,
-  projectName
+  projectName,
+  projectId,
 }: {
   messages: ChatMessage[];
   projectName: string;
+  projectId: string;
 }) {
   const [draft, setDraft] = useState("");
   const [thread, setThread] = useState(messages);
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const lastAiMessage = useMemo(
     () => thread.filter((message) => message.role === "ai").at(-1),
     [thread]
   );
 
+  async function refreshThread() {
+    const response = await fetch(`${API_BASE}/projects/${projectId}/chat/messages`, {
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error(`Unable to refresh thread (${response.status})`);
+    }
+
+    const payload = (await response.json()) as ChatMessage[];
+    setThread(payload);
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!draft.trim()) {
+      return;
+    }
+
+    setError(null);
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch(`${API_BASE}/projects/${projectId}/chat/messages`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          author: "You",
+          role: "human",
+          content: draft.trim(),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Unable to create message (${response.status})`);
+      }
+
+      setDraft("");
+      await refreshThread();
+    } catch {
+      setError("The cockpit assistant could not be reached. Check that the API is running.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   return (
     <div className="space-y-5">
       <SectionHeader
         eyebrow="Stakeholder chat"
         title={`Ask questions about ${projectName}`}
-        description="The assistant responds from the seeded evidence bundle and keeps unsafe or unsupported answers out of the path."
+        description="The assistant responds from the project dossier and keeps unsupported answers out of the path."
       />
       <Card className="space-y-4">
         {thread.map((message) => (
@@ -57,29 +100,7 @@ export function ChatPanel({
           <Badge tone="blue">Evidence-backed</Badge>
           <span className="text-sm text-slate-300">Latest answer: {lastAiMessage?.author ?? "none yet"}</span>
         </div>
-        <form
-          className="space-y-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!draft.trim()) return;
-            const humanMessage: ChatMessage = {
-              id: `chat-${thread.length + 1}`,
-              author: "You",
-              role: "human",
-              createdAt: new Date().toISOString(),
-              content: draft.trim()
-            };
-            const aiMessage: ChatMessage = {
-              id: `chat-${thread.length + 2}`,
-              author: "Cockpit Assistant",
-              role: "ai",
-              createdAt: new Date().toISOString(),
-              content: seededReply(draft)
-            };
-            setThread((current) => [...current, humanMessage, aiMessage]);
-            setDraft("");
-          }}
-        >
+        <form className="space-y-3" onSubmit={handleSubmit}>
           <textarea
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
@@ -87,11 +108,13 @@ export function ChatPanel({
             className="w-full rounded-3xl border border-white/10 bg-ink-900/70 p-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-sky-400/50"
             placeholder="Ask about migration sequencing, provider choice, blockers, or planning approvals..."
           />
+          {error ? <p className="text-sm text-rose-300">{error}</p> : null}
           <button
             type="submit"
+            disabled={isSubmitting}
             className="rounded-full bg-sky-400 px-5 py-2.5 text-sm font-medium text-slate-950 transition hover:bg-sky-300"
           >
-            Send to cockpit assistant
+            {isSubmitting ? "Sending..." : "Send to cockpit assistant"}
           </button>
         </form>
       </Card>

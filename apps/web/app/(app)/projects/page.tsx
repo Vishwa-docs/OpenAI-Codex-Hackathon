@@ -1,5 +1,5 @@
 import { Card, SectionHeader } from "@/components/ui";
-import { loadDashboardSummary } from "@/lib/api";
+import { loadDashboardSummary } from "@/lib/app-api";
 import { formatConfidence, formatPercent } from "@/lib/format";
 import Link from "next/link";
 
@@ -11,7 +11,7 @@ export default async function ProjectsPage() {
       <SectionHeader
         eyebrow="Projects"
         title="Migration projects and client workspaces"
-        description="Open a seeded assessment, review portfolio health, or start a new intake with the same cockpit workflow."
+        description="Open an existing workspace, review portfolio health, or start a new intake with the same cockpit workflow."
         action={
           <Link
             href="/projects/new"

@@ -1,6 +1,6 @@
 import { EvidenceList, ProviderCards } from "@/components/section-page";
 import { SectionHeader } from "@/components/ui";
-import { loadProjectDataset } from "@/lib/api";
+import { loadProjectDataset } from "@/lib/app-api";
 
 export default async function ProvidersPage({
   params
@@ -16,7 +16,7 @@ export default async function ProvidersPage({
       <SectionHeader
         eyebrow="Provider comparison"
         title="AWS, GCP, and Azure side-by-side"
-        description="The seeded recommendation compares provider fit against the workload’s constraints, operating model, and future execution roadmap."
+        description="The recommendation compares provider fit against the workload’s constraints, operating model, and future execution roadmap."
       />
       <ProviderCards providers={project.providers} />
       <EvidenceList evidence={leadingEvidence} title="Evidence informing the leading provider choice" />

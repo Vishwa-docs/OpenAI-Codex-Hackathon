@@ -125,8 +125,8 @@ export function DependencyGraph({
     <Card className="overflow-hidden">
       <div className="mb-4 flex items-center justify-between gap-4">
         <div>
-          <h3 className="text-lg font-medium text-white">LegacyCart dependency graph</h3>
-          <p className="mt-1 text-sm text-slate-300">Read-only topology extracted from the seeded assessment evidence.</p>
+          <h3 className="text-lg font-medium text-white">Dependency graph</h3>
+          <p className="mt-1 text-sm text-slate-300">Read-only topology extracted from the project evidence graph.</p>
         </div>
         <Badge tone="blue">{nodes.length} nodes</Badge>
       </div>

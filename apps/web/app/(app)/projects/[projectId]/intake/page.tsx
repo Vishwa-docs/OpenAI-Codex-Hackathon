@@ -1,6 +1,6 @@
 import { BulletList } from "@/components/section-page";
 import { Card, PillList, SectionHeader } from "@/components/ui";
-import { loadProjectDataset } from "@/lib/api";
+import { loadProjectDataset } from "@/lib/app-api";
 
 export default async function IntakePage({
   params

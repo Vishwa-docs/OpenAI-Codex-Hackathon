@@ -5,13 +5,17 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { SignOutButton } from "@/components/sign-out-button";
+import type { AuthSession } from "@/lib/auth-shared";
 
 export function CockpitShell({
   children,
-  projectHref = "/projects/legacycart"
+  projectHref = "/projects",
+  session
 }: {
   children: ReactNode;
   projectHref?: string;
+  session?: AuthSession | null;
 }) {
   const pathname = usePathname();
 
@@ -25,18 +29,30 @@ export function CockpitShell({
               <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Cockpit</p>
               <h1 className="mt-2 text-xl font-semibold text-white">Cloud Migration Cockpit</h1>
             </div>
+            {session ? (
+              <div className="text-right">
+                <p className="text-[10px] uppercase tracking-[0.3em] text-slate-400">Signed in</p>
+                <p className="mt-1 text-sm font-medium text-white">{session.user.name}</p>
+                <p className="text-xs text-slate-400">{session.user.email}</p>
+              </div>
+            ) : null}
           </div>
           <div className="mt-6 rounded-3xl border border-sky-400/20 bg-sky-400/10 p-4">
             <p className="text-xs uppercase tracking-[0.25em] text-sky-100/70">Current project</p>
-            <p className="mt-2 text-lg font-medium text-white">LegacyCart</p>
-            <p className="mt-1 text-sm text-slate-300">Northwind Retail Group</p>
+            <p className="mt-2 text-lg font-medium text-white">Workspace overview</p>
+            <p className="mt-1 text-sm text-slate-300">Open the active projects dashboard or continue in the current workspace.</p>
             <Link
               href={projectHref}
               className="mt-4 inline-flex rounded-full bg-sky-400 px-3 py-2 text-sm font-medium text-slate-950 transition hover:bg-sky-300"
             >
-              Open overview
+              Open projects
             </Link>
           </div>
+          {session ? (
+            <div className="mt-4 flex justify-end">
+              <SignOutButton />
+            </div>
+          ) : null}
           <nav className="mt-6 space-y-1">
             {cockpitNav.map((item) => {
               const active = pathname.startsWith(item.href);

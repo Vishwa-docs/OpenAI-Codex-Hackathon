@@ -1,6 +1,6 @@
 import { CommandCenterPanel } from "@/components/project-workspace";
 import { SectionHeader } from "@/components/ui";
-import { loadProjectDataset } from "@/lib/api";
+import { loadProjectDataset } from "@/lib/app-api";
 
 export default async function CommandCenterPage({
   params

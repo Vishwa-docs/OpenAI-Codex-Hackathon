@@ -1,6 +1,6 @@
 import { ApprovalCards, BulletList } from "@/components/section-page";
 import { Card, SectionHeader } from "@/components/ui";
-import { loadProjectDataset } from "@/lib/api";
+import { loadProjectDataset } from "@/lib/app-api";
 
 export default async function ApprovalsPage({
   params
@@ -15,7 +15,7 @@ export default async function ApprovalsPage({
       <SectionHeader
         eyebrow="Approval center"
         title="Human-in-the-loop control points"
-        description="Planning and execution remain gated. Proposed tools and connectors stay disabled until explicitly approved."
+        description="Planning and execution remain gated. Proposed tools and connectors stay disabled until they are explicitly approved."
       />
       <ApprovalCards approvals={project.approvals} />
       <Card className="space-y-4">

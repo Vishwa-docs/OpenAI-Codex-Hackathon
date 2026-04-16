@@ -32,7 +32,7 @@ export interface ConnectorItem {
   id: string;
   name: string;
   kind: "source" | "cloud" | "observability" | "registry";
-  status: "connected" | "needs_attention" | "proposed" | "disabled";
+  status: "connected" | "needs_attention" | "needs_configuration" | "proposed" | "disabled";
   details: string;
   lastSyncAt?: string;
 }
@@ -228,7 +228,7 @@ const providers: ProviderOption[] = [
     bestFor: "IAM, managed databases, and a broad execution surface for cloud migration programs.",
     tradeoffs: ["Broad service surface needs tighter guardrails", "Requires upfront landing zone discipline"],
     confidence: 0.9,
-    rationale: "AWS best matches the seeded roadmap for IAM, managed database services, and future dry-run execution.",
+    rationale: "AWS best matches the roadmap for IAM, managed database services, and future dry-run execution.",
     evidence
   },
   {
@@ -236,7 +236,7 @@ const providers: ProviderOption[] = [
     name: "Google Cloud",
     score: 79,
     bestFor: "Data-centric platforms with strong analytics and container primitives.",
-    tradeoffs: ["Fewer migration-specific guardrails in this seed scenario", "Less aligned with the current ops model"],
+    tradeoffs: ["Fewer migration-specific guardrails in this scenario", "Less aligned with the current operating model"],
     confidence: 0.82,
     rationale: "A credible modernization option, but less aligned with the AWS-first execution path.",
     evidence
@@ -246,9 +246,9 @@ const providers: ProviderOption[] = [
     name: "Azure",
     score: 76,
     bestFor: "Microsoft-centric enterprises and identity-heavy rollouts.",
-    tradeoffs: ["Current app stack and ops patterns do not benefit as much in the MVP demo", "Requires extra explanation to stakeholders"],
+    tradeoffs: ["Current app stack and operations patterns do not benefit as much in this scenario", "Requires extra explanation to stakeholders"],
     confidence: 0.79,
-    rationale: "Strong enterprise controls, but the MVP has AWS-first execution and limited Azure-specific connectors.",
+    rationale: "Strong enterprise controls, but the workspace has AWS-first execution and limited Azure-specific connectors.",
     evidence
   }
 ];
@@ -450,7 +450,7 @@ const approvals: ApprovalRecord[] = [
     state: "approved",
     requestedBy: "Mia Chen",
     approver: "Jordan Patel",
-    comment: "Assessment run approved for demo scope.",
+    comment: "Assessment run approved for workspace scope.",
     decidedAt: "2026-04-16T06:14:00Z"
   },
   {
@@ -479,7 +479,7 @@ const auditEvents: AuditEvent[] = [
     entityType: "migration_project",
     entityId: "legacycart",
     createdAt: "2026-04-16T06:11:00Z",
-    metadata: { mode: "seeded", source: "local-worker" }
+    metadata: { mode: "local", source: "local-worker" }
   },
   {
     id: "audit-002",
@@ -537,17 +537,17 @@ const chat: ChatMessage[] = [
     author: "Cockpit Assistant",
     role: "ai",
     createdAt: "2026-04-16T06:13:55Z",
-    content: "AWS remains the best match in this seed because the migration blockers are operational rather than platform-specific, and AWS gives us the strongest landing-zone and IAM primitives for the demo."
+    content: "AWS remains the best match here because the migration blockers are operational rather than platform-specific, and AWS gives us the strongest landing-zone and IAM primitives for the workspace."
   }
 ];
 
 const connectors: ConnectorItem[] = [
   {
     id: "conn-001",
-    name: "Local directory",
+    name: "Assessment local directory",
     kind: "source",
     status: "connected",
-    details: "Scans `demo-systems/legacycart` and normalizes files, logs, and manifests.",
+    details: "Scans `demo-systems/legacycart` and normalizes files, logs, and manifests for the workspace.",
     lastSyncAt: "2026-04-16T06:10:00Z"
   },
   {
@@ -580,13 +580,13 @@ const sourceConnections: SourceConnection[] = [
   {
     id: "source-local-legacycart",
     kind: "local_directory",
-    name: "LegacyCart local directory",
+    name: "Assessment local directory",
     status: "connected",
     mode: "read_only",
     target: "demo-systems/legacycart",
     lastSyncAt: "2026-04-16T06:10:00Z",
     credentialRef: { id: "cred-none-local", kind: "none", label: "No credential required", redactedValue: "n/a" },
-    notes: ["Primary seeded source for the local product demo."]
+    notes: ["Primary local source for the workspace."]
   },
   {
     id: "source-github-template",
@@ -696,10 +696,10 @@ const evalRuns: EvalRun[] = [
     completedAt: "2026-04-16T06:12:05Z",
     metrics: [
       { metricKey: "citation_coverage", label: "Citation coverage", score: 96, summary: "Recommendations remain linked to evidence.", status: "pass" },
-      { metricKey: "unsupported_claim_rate", label: "Unsupported claim rate", score: 92, summary: "Seeded outputs keep unsupported claims low.", status: "pass" },
+      { metricKey: "unsupported_claim_rate", label: "Unsupported claim rate", score: 92, summary: "Workspace outputs keep unsupported claims low.", status: "pass" },
       { metricKey: "recommendation_consistency", label: "Recommendation consistency", score: 89, summary: "Specialist-agent outputs converge on the same final recommendation.", status: "pass" },
       { metricKey: "cost_sanity", label: "Cost sanity", score: 84, summary: "Cost model assumptions are directionally sound but still scenario-based.", status: "warn" },
-      { metricKey: "latency", label: "Agent latency", score: 87, summary: "Assessment finished comfortably within local demo expectations.", status: "pass" },
+      { metricKey: "latency", label: "Agent latency", score: 87, summary: "Assessment finished comfortably within local runtime expectations.", status: "pass" },
       { metricKey: "policy_compliance", label: "Policy compliance", score: 90, summary: "Discovery remains read-only and execution stays approval-gated.", status: "pass" }
     ]
   }
@@ -754,7 +754,7 @@ const evaluation: EvalSummary = {
   checks: [
     { name: "Report completeness", score: 91, note: "All major business and technical sections are represented." },
     { name: "Citation coverage", score: 96, note: "Findings and recommendations are linked to evidence refs." },
-    { name: "Unsupported claim rate", score: 92, note: "The seeded story keeps claims grounded in evidence." },
+    { name: "Unsupported claim rate", score: 92, note: "The workspace story keeps claims grounded in evidence." },
     { name: "Action safety compliance", score: 84, note: "Writes remain gated and the AWS adapter is disabled." }
   ]
 };
@@ -768,7 +768,7 @@ export function createMockDashboardSummary(): DashboardSummary {
     topProjects: [
       {
         id: "legacycart",
-        name: "LegacyCart migration assessment",
+        name: "Retail commerce modernization assessment",
         clientName: "Northwind Retail Group",
         readinessScore: 52,
         migrationDecision: "Defer until blockers are remediated",
@@ -806,7 +806,7 @@ export function createMockDashboardSummary(): DashboardSummary {
 export function createMockProjectDataset(projectId = "legacycart"): ProjectDataset {
   return {
     projectId,
-    projectName: "LegacyCart migration assessment",
+    projectName: "Retail commerce modernization assessment",
     clientName: "Northwind Retail Group",
     dashboard: createMockDashboardSummary(),
     overview: {
@@ -1135,25 +1135,7 @@ export function buildProjectDatasetFromApi({
     artifacts,
     approvals,
     auditEvents,
-    chat:
-      chatMessages.length > 0
-        ? chatMessages
-        : [
-            {
-              id: "chat-001",
-              author: "Mia Chen",
-              role: "human",
-              createdAt: assessment.completedAt,
-              content: "What is the safest path if the client wants early momentum but cannot accept an unsafe cutover?"
-            },
-            {
-              id: "chat-002",
-              author: "Cockpit Assistant",
-              role: "ai",
-              createdAt: assessment.completedAt,
-              content: `${providers[0]?.name ?? "AWS"} with a security-first wave is the safest recommendation. ${finalRecommendation.nextSteps[0] ?? "Remediate the highest-risk blockers first."}`
-            }
-          ],
+    chat: chatMessages,
     connectors,
     sourceConnections,
     cloudConnections,

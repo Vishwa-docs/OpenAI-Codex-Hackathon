@@ -1,6 +1,6 @@
 import { BulletList } from "@/components/section-page";
 import { Card, MetricCard, SectionHeader } from "@/components/ui";
-import { loadProjectDataset } from "@/lib/api";
+import { loadProjectDataset } from "@/lib/app-api";
 
 export default async function CostRoiPage({
   params
@@ -15,7 +15,7 @@ export default async function CostRoiPage({
       <SectionHeader
         eyebrow="Cost and ROI"
         title="Financial view of the migration path"
-        description="The seeded model compares current-state run rate against the proposed target and makes its assumptions visible."
+        description="The cost model compares current-state run rate against the proposed target and makes its assumptions visible."
       />
       <div className="grid gap-4 xl:grid-cols-4">
         <MetricCard label="Current monthly run rate" value={`$${project.costModel.currentMonthlyRunRate.toLocaleString()}`} detail="Legacy operations, storage, and database costs." />

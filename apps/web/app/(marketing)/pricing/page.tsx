@@ -2,7 +2,7 @@ import { Badge, Card, SectionHeader } from "@/components/ui";
 import Link from "next/link";
 
 const plans = [
-  { name: "Pilot", hint: "For a single assessment engagement", price: "Custom", features: ["One workspace", "Seeded evaluation views", "PDF export", "Local stack for demos"] },
+  { name: "Pilot", hint: "For a single assessment engagement", price: "Custom", features: ["One workspace", "Evaluation views", "PDF export", "Local stack for demos"] },
   { name: "Consultancy", hint: "For an MSP delivery team", price: "Custom", features: ["Multi-project cockpit", "Approval gates", "Connector registry", "Scenario and report center"] },
   { name: "Enterprise", hint: "For internal migration offices", price: "Talk to us", features: ["Advanced tenancy", "Execution adapters", "Custom eval packs", "Control-plane extensions"] }
 ];

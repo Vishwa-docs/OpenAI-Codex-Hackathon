@@ -2,7 +2,6 @@ from fastapi.testclient import TestClient
 
 from services.api.app.main import app
 
-
 client = TestClient(app)
 
 
@@ -23,7 +22,7 @@ def test_project_resources_can_be_created_and_persisted() -> None:
     assert source.status_code == 201
     source_payload = source.json()
     assert source_payload["name"] == "Northstar GitHub"
-    assert source_payload["status"] == "connected"
+    assert source_payload["status"] == "needs_configuration"
 
     cloud = client.post(
         "/api/v1/projects/legacycart/cloud-connections",
@@ -42,6 +41,7 @@ def test_project_resources_can_be_created_and_persisted() -> None:
     cloud_payload = cloud.json()
     assert cloud_payload["provider"] == "aws"
     assert cloud_payload["mode"] == "dry_run"
+    assert cloud_payload["status"] == "needs_configuration"
 
     chat = client.post(
         "/api/v1/projects/legacycart/chat/messages",
@@ -64,6 +64,10 @@ def test_project_resources_can_be_created_and_persisted() -> None:
 
     chat_messages = client.get("/api/v1/projects/legacycart/chat/messages").json()
     assert any(item["content"].startswith("Please queue a fresh assessment") for item in chat_messages)
+    assert any(item["author"] == "Cockpit Assistant" for item in chat_messages)
+    assert any(
+        "OPENAI_API_KEY" in item["content"] or "Sources:" in item["content"] for item in chat_messages if item["author"] == "Cockpit Assistant"
+    )
 
 
 def test_assessment_run_can_be_requested_and_is_audited() -> None:

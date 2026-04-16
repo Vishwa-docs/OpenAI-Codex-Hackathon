@@ -1,5 +1,5 @@
 import { ProjectShell } from "@/components/project-shell";
-import { loadProjectDataset } from "@/lib/api";
+import { loadProjectDataset } from "@/lib/app-api";
 import type { ReactNode } from "react";
 
 export default async function ProjectLayout({

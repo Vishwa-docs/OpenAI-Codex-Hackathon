@@ -1,5 +1,5 @@
 import { ChatPanel } from "@/components/chat-panel";
-import { loadProjectDataset } from "@/lib/api";
+import { loadProjectDataset } from "@/lib/app-api";
 
 export default async function ChatPage({
   params
@@ -9,5 +9,5 @@ export default async function ChatPage({
   const { projectId } = await params;
   const project = await loadProjectDataset(projectId);
 
-  return <ChatPanel messages={project.chat} projectName={project.projectName} />;
+  return <ChatPanel messages={project.chat} projectName={project.projectName} projectId={projectId} />;
 }

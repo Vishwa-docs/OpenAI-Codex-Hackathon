@@ -1,7 +1,7 @@
-.PHONY: infra api web worker worker-scan stack test
+.PHONY: infra api web worker worker-scan stack test static
 
 infra:
-	docker compose up -d postgres redis minio
+	docker compose up -d postgres redis minio mailpit
 
 api:
 	uv run uvicorn services.api.app.main:app --reload --port 8000
@@ -20,3 +20,9 @@ stack:
 
 test:
 	npm run test:web && uv run pytest
+
+static:
+	uv run ruff check services
+	uv run mypy services
+	npm run lint:web
+	npm run typecheck:web

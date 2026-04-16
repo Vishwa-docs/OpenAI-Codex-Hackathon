@@ -1,5 +1,5 @@
 import { Card, MetricCard, SectionHeader } from "@/components/ui";
-import { loadDashboardSummary } from "@/lib/api";
+import { loadDashboardSummary } from "@/lib/app-api";
 import Link from "next/link";
 
 export default async function DashboardPage() {
@@ -13,7 +13,7 @@ export default async function DashboardPage() {
         description="Track readiness, approvals, findings, and report output without leaving the cockpit."
       />
       <div className="grid gap-4 xl:grid-cols-4">
-        <MetricCard label="Active projects" value={`${dashboard.activeProjects}`} detail="Seeded portfolio and future client workspaces." />
+        <MetricCard label="Active projects" value={`${dashboard.activeProjects}`} detail="Active client workspaces and projects in the portfolio." />
         <MetricCard label="Pending approvals" value={`${dashboard.pendingApprovals}`} detail="Planning gates keep execution controlled." />
         <MetricCard label="Open findings" value={`${dashboard.openFindings}`} detail="Critical blockers are evidence-linked." />
         <MetricCard label="Report exports" value={`${dashboard.reportExports}`} detail="Executive and technical outputs are ready to ship." trend="+7 today" />

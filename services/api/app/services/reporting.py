@@ -17,7 +17,7 @@ except ModuleNotFoundError:  # pragma: no cover - exercised indirectly in tests
 
 
 class ReportExporter:
-    """Generates lightweight deterministic exports for seeded reports."""
+    """Generates lightweight exports for assessment reports and artifacts."""
 
     def export(self, report: Report, fmt: ArtifactFormat) -> tuple[bytes, str]:
         if fmt == "pdf":
@@ -85,16 +85,16 @@ class ReportExporter:
         offsets: list[int] = []
         for obj in objects:
             offsets.append(buffer.tell())
-            buffer.write(f"{obj}\n".encode("utf-8"))
+            buffer.write(f"{obj}\n".encode())
         xref_offset = buffer.tell()
-        buffer.write(f"xref\n0 {len(objects) + 1}\n".encode("utf-8"))
+        buffer.write(f"xref\n0 {len(objects) + 1}\n".encode())
         buffer.write(b"0000000000 65535 f \n")
         for offset in offsets:
-            buffer.write(f"{offset:010d} 00000 n \n".encode("utf-8"))
+            buffer.write(f"{offset:010d} 00000 n \n".encode())
         buffer.write(
             (
                 f"trailer << /Root 1 0 R /Size {len(objects) + 1} >>\n"
                 f"startxref\n{xref_offset}\n%%EOF"
-            ).encode("utf-8")
+            ).encode()
         )
         return buffer.getvalue()

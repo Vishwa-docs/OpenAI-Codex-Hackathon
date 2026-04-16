@@ -1,15 +1,15 @@
 from __future__ import annotations
 
+import json
+import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
-import json
-import re
-from typing import Iterable
 
 from .models import (
-    ConnectorHandoff,
     Component,
+    ConnectorHandoff,
     DependencyEdge,
     Evidence,
     Finding,
@@ -17,9 +17,9 @@ from .models import (
     Recommendation,
     ScanResult,
     ScanSummary,
-    SourceMetadata,
     Scenario,
     ScenarioOutcome,
+    SourceMetadata,
 )
 
 
@@ -52,6 +52,7 @@ class LegacyCartScanner:
             scan_id=self._scan_id(),
             target_name="LegacyCart",
             root_path=str(self.root),
+            project_id=self.root.name.lower(),
             source=source,
             pipelines=pipelines,
             connector_handoffs=connector_handoffs,
@@ -227,7 +228,9 @@ class LegacyCartScanner:
         evidence_id = f"ev_{self._evidence_counter:04d}"
         self._evidence_counter += 1
         confidence = 0.98 if evidence_type in {"secret", "runtime", "storage_risk", "transport"} else 0.9
-        locator = {"lineStart": line_start, "lineEnd": line_start} if line_start else None
+        locator: dict[str, int | str] | None = (
+            {"lineStart": line_start, "lineEnd": line_start} if line_start else None
+        )
         should_redact = redaction_applied or evidence_type in {"secret", "log_leak"}
         stored_excerpt = self._redact_excerpt(evidence_type, excerpt) if should_redact else excerpt
         content_hash = f"sha256:{sha256(f'{source_type}:{source_uri}:{excerpt}'.encode()).hexdigest()}"
@@ -460,7 +463,7 @@ class LegacyCartScanner:
             recommendation = "defer until blockers are remediated"
         else:
             recommendation = "re-architect first"
-        provider_ranking = [
+        provider_ranking: list[dict[str, str | int]] = [
             {"provider": "AWS", "score": 84, "best_for": "broad managed service depth and migration tooling"},
             {"provider": "GCP", "score": 76, "best_for": "data and analytics heavy modernization"},
             {"provider": "Azure", "score": 73, "best_for": "Microsoft identity and enterprise integration"},

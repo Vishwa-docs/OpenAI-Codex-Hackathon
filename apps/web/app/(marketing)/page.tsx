@@ -1,5 +1,5 @@
 import { Badge, Card, MetricCard } from "@/components/ui";
-import { loadDashboardSummary, loadProjectDataset } from "@/lib/api";
+import { BackendUnavailableError, loadDashboardSummary, loadProjectDataset } from "@/lib/api";
 import { formatConfidence, formatPercent } from "@/lib/format";
 import Link from "next/link";
 
@@ -33,12 +33,24 @@ const pipelines = [
 const deliverables = [
   "Runnable local control plane with web, API, worker, PostgreSQL, Redis, and MinIO",
   "Marketing site and demo narrative that match the product’s operator workflow",
-  "Seeded LegacyCart dossier with findings, scenarios, reports, artifacts, and approvals",
+  "LegacyCart demo tenant with findings, scenarios, reports, artifacts, and approvals",
   "Agent Factory / Tool Factory proposals that stay disabled until approved"
 ];
 
 export default async function MarketingHomePage() {
-  const [dashboard, project] = await Promise.all([loadDashboardSummary(), loadProjectDataset("legacycart")]);
+  let dashboard = null;
+  let project = null;
+  let liveDataUnavailable = false;
+
+  try {
+    [dashboard, project] = await Promise.all([loadDashboardSummary(), loadProjectDataset("legacycart")]);
+  } catch (error) {
+    if (error instanceof BackendUnavailableError) {
+      liveDataUnavailable = true;
+    } else {
+      throw error;
+    }
+  }
 
   return (
     <main className="mx-auto max-w-7xl px-6 pb-20 pt-14 lg:px-8">
@@ -69,32 +81,69 @@ export default async function MarketingHomePage() {
             </Link>
           </div>
           <div className="grid gap-4 pt-2 md:grid-cols-3">
-            <MetricCard label="Active projects" value={`${dashboard.activeProjects}`} detail="Seeded portfolio view ready for investor demos." trend="+18%" />
-            <MetricCard label="Pending approvals" value={`${dashboard.pendingApprovals}`} detail="Approval-gated planning keeps the execution phase safe." trend="2 locked" />
-            <MetricCard label="Open findings" value={`${dashboard.openFindings}`} detail="All critical issues are cited back to evidence and files." trend="4 critical" />
+            <MetricCard
+              label="Active projects"
+              value={dashboard ? `${dashboard.activeProjects}` : "Live"}
+              detail={
+                dashboard
+                  ? "Portfolio metrics are being served from the control plane."
+                  : "Connect the control plane to show live portfolio metrics here."
+              }
+              trend={dashboard ? "+18%" : "API ready"}
+            />
+            <MetricCard
+              label="Pending approvals"
+              value={dashboard ? `${dashboard.pendingApprovals}` : "Gated"}
+              detail="Approval-gated planning keeps execution safe and auditable."
+              trend={dashboard ? "2 locked" : "workflow"}
+            />
+            <MetricCard
+              label="Open findings"
+              value={dashboard ? `${dashboard.openFindings}` : "Cited"}
+              detail="Every finding is expected to resolve back to evidence and files."
+              trend={dashboard ? "4 critical" : "evidence"}
+            />
           </div>
         </div>
         <Card className="space-y-4 border-sky-400/20 bg-sky-400/[0.06]">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Seeded project</p>
-              <h2 className="mt-2 text-2xl font-semibold text-white">{project.projectName}</h2>
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Demo tenant</p>
+              <h2 className="mt-2 text-2xl font-semibold text-white">
+                {project?.projectName ?? "LegacyCart migration walkthrough"}
+              </h2>
             </div>
-            <Badge tone="amber">{formatPercent(project.overview.readinessScore)}</Badge>
+            <Badge tone="amber">{project ? formatPercent(project.overview.readinessScore) : "Ready"}</Badge>
           </div>
-          <p className="text-sm leading-6 text-slate-300">{project.overview.narrative}</p>
+          <p className="text-sm leading-6 text-slate-300">
+            {project?.overview.narrative ??
+              "Use the included demo tenant to walk clients through assessment, planning, reporting, approvals, and dry-run execution."}
+          </p>
           <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
             <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Recommendation</p>
-            <p className="mt-2 text-lg font-medium text-white">{project.overview.migrationDecision}</p>
-            <p className="mt-2 text-sm text-slate-300">{formatConfidence(project.overview.confidence)}</p>
+            <p className="mt-2 text-lg font-medium text-white">
+              {project?.overview.migrationDecision ?? "Evidence-backed migration pathway"}
+            </p>
+            <p className="mt-2 text-sm text-slate-300">
+              {project ? formatConfidence(project.overview.confidence) : "Live control-plane metrics appear when the API is available."}
+            </p>
           </div>
           <div className="space-y-3 text-sm text-slate-300">
-            {project.reportHighlights.map((item) => (
+            {(project?.reportHighlights ?? [
+              "Executive and technical outputs come from the same evidence backbone.",
+              "Approvals gate planning and execution rather than living in side channels.",
+              "The demo tenant runs on the same control-plane workflow used for real projects.",
+            ]).map((item) => (
               <div key={item} className="rounded-2xl bg-white/5 px-4 py-3 leading-6">
                 {item}
               </div>
             ))}
           </div>
+          {liveDataUnavailable ? (
+            <div className="rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
+              The marketing site is up, but the control-plane API is not reachable right now. Start the local stack to populate live demo metrics.
+            </div>
+          ) : null}
         </Card>
       </section>
 
@@ -116,7 +165,7 @@ export default async function MarketingHomePage() {
         </Card>
         <Card>
           <p className="text-sm uppercase tracking-[0.24em] text-slate-400">Evals</p>
-          <p className="mt-3 text-2xl font-semibold text-white">{project.evaluation.overallScore}/100</p>
+          <p className="mt-3 text-2xl font-semibold text-white">{project ? `${project.evaluation.overallScore}/100` : "Scored"}</p>
           <p className="mt-2 text-sm leading-6 text-slate-300">Report completeness, citation coverage, and safety checks are scored in-product.</p>
         </Card>
       </section>
@@ -143,7 +192,7 @@ export default async function MarketingHomePage() {
           <h2 className="text-3xl font-semibold text-white">Run the entire cockpit on your laptop.</h2>
           <p className="text-sm leading-7 text-slate-300">
             `make stack` launches the marketing site, cockpit UI, FastAPI control plane, worker service, PostgreSQL,
-            Redis, and MinIO. The demo is self-contained, but the connector surfaces are ready for live credentials when
+            Redis, and MinIO. The demo workload is self-contained, but the connector surfaces are ready for live credentials when
             you want them.
           </p>
           <div className="rounded-3xl border border-white/10 bg-slate-950/40 p-4 font-mono text-sm text-sky-100">

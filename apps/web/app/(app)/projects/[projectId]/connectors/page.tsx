@@ -1,5 +1,5 @@
 import { Card, SectionHeader } from "@/components/ui";
-import { loadProjectDataset } from "@/lib/api";
+import { loadProjectDataset } from "@/lib/app-api";
 
 export default async function ConnectorsPage({
   params
@@ -14,7 +14,7 @@ export default async function ConnectorsPage({
       <SectionHeader
         eyebrow="Connectors"
         title="Source, cloud, and factory integrations"
-        description="The seeded demo works without external keys. Live connectors stay disabled or proposed until credentials and approvals are supplied."
+        description="Discovery works without external keys. Live connectors stay disabled or proposed until credentials and approvals are supplied."
       />
       <div className="grid gap-4 xl:grid-cols-2">
         {project.connectors.map((connector) => (

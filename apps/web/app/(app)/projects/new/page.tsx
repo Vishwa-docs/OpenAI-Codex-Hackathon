@@ -1,5 +1,7 @@
 import { BulletList } from "@/components/section-page";
+import { ProjectIntakeForm } from "@/components/project-intake-form";
 import { Card, SectionHeader } from "@/components/ui";
+import { DEFAULT_WORKSPACE_ID } from "@/lib/app-api";
 
 const wizardSteps = [
   "Business context, migration goals, geography, and timelines",
@@ -13,8 +15,8 @@ export default function NewProjectPage() {
     <div className="space-y-6">
       <SectionHeader
         eyebrow="New project"
-        title="Seeded intake wizard"
-        description="The MVP keeps intake explicit and structured so later agent runs stay evidence-backed, approval-aware, and safe by default."
+        title="Intake wizard"
+        description="The intake flow keeps project setup explicit and structured so later agent runs stay evidence-backed, approval-aware, and safe by default."
       />
       <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
         <Card className="space-y-4">
@@ -30,6 +32,7 @@ export default function NewProjectPage() {
           </div>
         </Card>
       </div>
+      <ProjectIntakeForm workspaceId={DEFAULT_WORKSPACE_ID} />
     </div>
   );
 }

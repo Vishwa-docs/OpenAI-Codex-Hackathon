@@ -8,7 +8,7 @@ import {
 import { RecommendationList } from "@/components/section-page";
 import { Card, MetricCard, PillList, SectionHeader } from "@/components/ui";
 import { EvaluationPanel, ProviderComparison, ReadinessGauge } from "@/components/visualizations";
-import { loadProjectDataset } from "@/lib/api";
+import { loadProjectDataset } from "@/lib/app-api";
 import { formatConfidence } from "@/lib/format";
 
 export default async function ProjectOverviewPage({
@@ -41,7 +41,7 @@ export default async function ProjectOverviewPage({
         <Card className="space-y-4">
           <h2 className="text-lg font-medium text-white">Program snapshot</h2>
           <div className="grid gap-3 md:grid-cols-2">
-            <MetricCard label="Phase" value={project.overview.phase} detail="Current workflow phase in the seeded program." />
+            <MetricCard label="Phase" value={project.overview.phase} detail="Current workflow phase in this workspace." />
             <MetricCard label="Status" value={project.overview.status} detail="Human approval and execution posture." />
           </div>
           <div className="space-y-3 text-sm leading-6 text-slate-300">

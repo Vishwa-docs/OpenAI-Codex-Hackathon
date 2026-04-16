@@ -25,7 +25,7 @@ export function ProjectShell({
           <h2 className="mt-2 text-2xl font-semibold text-white">{projectName}</h2>
         </div>
         <div className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-sm text-emerald-100">
-          Seeded assessment ready
+          Workspace ready
         </div>
       </div>
       <div className="mt-5 flex flex-wrap gap-2">

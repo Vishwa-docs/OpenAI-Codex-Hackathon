@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import sys
+from pathlib import Path
+from typing import cast
 
 from .scanner import result_to_json, scan_legacycart
 
@@ -21,7 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "scan":
         result = scan_legacycart(args.root)
-        payload = result_to_json(result)
+        payload = cast(str, result_to_json(result, as_dict=False))
         if args.json:
             sys.stdout.write(payload)
         else:
@@ -32,4 +33,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

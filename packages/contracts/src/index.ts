@@ -1,7 +1,7 @@
 export type Severity = "critical" | "high" | "medium" | "low";
 export type ApprovalState = "not_required" | "pending" | "approved" | "rejected";
 export type RunStatus = "queued" | "running" | "succeeded" | "failed";
-export type ConnectionStatus = "connected" | "needs_attention" | "proposed" | "disabled";
+export type ConnectionStatus = "connected" | "needs_attention" | "needs_configuration" | "proposed" | "disabled";
 export type PipelineStatus = "queued" | "running" | "blocked" | "succeeded" | "failed";
 export type ReportKind =
   | "executive_summary"
@@ -239,6 +239,56 @@ export interface ProjectOverview {
   phase: string;
   status: string;
   recommendedProvider: string;
+}
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  name: string;
+  activeOrganizationId?: string | null;
+}
+
+export interface OrganizationSummary {
+  id: string;
+  name: string;
+  slug: string;
+  mode: "demo" | "standard";
+}
+
+export interface WorkspaceSummary {
+  id: string;
+  organizationId: string;
+  name: string;
+  slug: string;
+  mode: "demo" | "standard";
+  projectCount: number;
+}
+
+export interface ClientAccountSummary {
+  id: string;
+  workspaceId: string;
+  name: string;
+  industry: string;
+  primaryRegion: string;
+  complianceTags: string[];
+}
+
+export interface WorkspaceContext {
+  organization: OrganizationSummary;
+  workspace: WorkspaceSummary;
+  clientAccounts: ClientAccountSummary[];
+  projects: ProjectOverview[];
+}
+
+export interface ProjectCreate {
+  name: string;
+  clientName: string;
+  sourceSystem: string;
+  targetSystem: string;
+  businessSummary: string;
+  owner: string;
+  primaryRegion: string;
+  complianceTags: string[];
 }
 
 export interface DashboardSummary {

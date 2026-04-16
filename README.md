@@ -8,11 +8,11 @@ Cloud Migration Cockpit is an AI-native migration assessment and planning contro
 ## What the MVP Covers
 
 - Marketing site and product shell
-- Workspace, project, and intake scaffolding
-- Seeded migration assessment for a legacy commerce system
+- Workspace, project, tenant, and intake scaffolding
+- Demo-tenant migration assessment for a legacy commerce system built from the real local scan path
 - Evidence, findings, recommendations, and provider comparison views
 - Scenario analysis, approvals, audit timeline, and artifact/report surfaces
-- Local worker service, local worker CLI contract, and deterministic assessment swarm
+- Local worker service, local worker CLI contract, and assessment orchestration surfaces
 - Agent Factory / Tool Factory scaffolding for future extensibility
 
 ## Monorepo Layout
@@ -37,8 +37,8 @@ The first shipped slice is sync-first and async-ready:
 
 1. Create or open a migration project in the cockpit UI.
 2. Scan `demo-systems/legacycart` with the local worker contract.
-3. Persist a normalized dossier containing evidence, dependency graph edges, findings, and seeded scenarios.
-4. Run a deterministic assessment swarm that produces a recommendation, cost/ROI view, provider comparison, compliance/risk summary, and generated artifacts.
+3. Persist a normalized dossier containing evidence, dependency graph edges, findings, and scenario/report inputs.
+4. Run the assessment flow that produces a recommendation, cost/ROI view, provider comparison, compliance/risk summary, and generated artifacts.
 5. Review approvals, audit trail, reports, and planning artifacts.
 
 The runtime model already includes run/task metadata, report versions, audit events, and approval gates so we can later move assessment execution to queue-backed workers and add real cloud connectors.
@@ -121,4 +121,4 @@ uv run uvicorn services.worker.app.main:app --reload --port 8001
 
 ## Connectors and Keys
 
-The MVP is intentionally local-first and deterministic. You do not need external API keys to run the seeded demo. If you want live GitHub, Azure Repos, or cloud account connectivity in a later pass, I’ll ask for the specific connector credentials before wiring them in.
+The local stack runs without third-party credentials for the included demo tenant. Live GitHub, Azure Repos, OpenAI, email, and AWS validation require the credentials documented in [SETUP.md](SETUP.md). When those credentials are missing, the product surfaces `needs_configuration` instead of claiming a live connection, and the stakeholder chat path will explicitly ask for `OPENAI_API_KEY` instead of fabricating an answer.

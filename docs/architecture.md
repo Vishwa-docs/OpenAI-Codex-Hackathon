@@ -10,19 +10,19 @@ Cloud Migration Cockpit is an evidence-backed migration assessment and planning 
 
 - Public marketing surface and private cockpit live in one Next.js App Router application.
 - The product shell is optimized for investor-friendly demos: clear KPIs, strong visual hierarchy, concise stakeholder-friendly copy, and deep drill-down views for technical users.
-- All major views are seeded from deterministic API responses so the product is demoable without external integrations.
+- The included demo tenant runs on the same control-plane surfaces as the product; only the demo workload and demo tenant data are preloaded.
 
 ### Control Plane
 
 - FastAPI serves as the orchestration API and report/export backend.
-- The assessment engine is sync-first for the MVP, but all runs are modeled as `AssessmentRun` and `AssessmentTask` records so the same contract can move to async queue execution later.
+- The assessment engine is sync-first today, but all runs are modeled as `AssessmentRun` records so the same contract can move to async queue execution later.
 - Reports, audit events, approvals, and generated artifacts are stored as structured objects rather than only rendered text.
 
 ### Local Worker
 
 - The worker scans a local repo or directory and converts raw evidence into canonical evidence records, normalized components, graph edges, and scanner findings.
-- The first implementation is deterministic and fixture-friendly so we can ship a reliable demo without external code hosting connectors.
-- GitHub and Azure Repos support are represented as connector abstractions with disabled-by-default stubs for later activation.
+- The worker powers the included demo workload from the real repository files and can validate local-directory connector requests immediately.
+- GitHub and Azure Repos support are exposed as read-only connector contracts that stay in `needs_configuration` until live credentials are supplied.
 
 ### Data and Infra
 
@@ -71,7 +71,7 @@ Cloud Migration Cockpit is an evidence-backed migration assessment and planning 
 
 ## Assessment Swarm
 
-The MVP implements the swarm as deterministic specialist agents with structured outputs:
+The current control plane exposes the specialist-agent surfaces with structured outputs:
 
 1. Intake Normalizer Agent
 2. Codebase Discovery Agent
@@ -132,11 +132,10 @@ This keeps extension pathways explicit and auditable instead of burying them in 
 
 ## Stage Boundaries
 
-### Stage 1 in this MVP
+### Stage 1 in the current build
 
-- seeded intake flow
-- seeded worker scan and dossier
-- deterministic recommendation engine
+- demo-tenant intake flow
+- real local worker scan and dossier for the bundled legacy workload
 - provider, cost, risk, and scenario views
 - reports, artifacts, approvals, audit log, and stakeholder chat
 

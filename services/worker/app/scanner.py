@@ -454,7 +454,7 @@ class LegacyCartScanner:
     def _build_summary(self) -> ScanSummary:
         critical = sum(1 for item in self.state.findings if item.severity == "critical")
         blocker_count = sum(1 for item in self.state.findings if item.severity in {"critical", "high"})
-        base = 92
+        base = 84
         deduction = critical * 12 + blocker_count * 4
         readiness = max(25, min(92, base - deduction))
         if readiness >= 70:

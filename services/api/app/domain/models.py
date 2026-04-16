@@ -42,12 +42,17 @@ ConnectionStatus = Literal["connected", "needs_attention", "needs_configuration"
 PipelineStatus = Literal["queued", "running", "blocked", "succeeded", "failed"]
 CredentialKind = Literal["token", "oauth", "assumed_role", "access_key", "none"]
 PipelineKey = Literal[
-    "intake_connections",
-    "evidence_ingestion",
-    "assessment_swarm",
-    "planning_artifacts",
-    "report_composition",
-    "evals_governance",
+    "intake_clarification",
+    "codebase_discovery",
+    "architecture_analysis",
+    "security_readiness",
+    "hosting_fit_recommendation",
+    "migration_strategy",
+    "infra_plan_generation",
+    "evaluation_critique",
+    "deployment_readiness",
+    "aws_execution",
+    "post_deploy_validation",
 ]
 TenantMode = Literal["demo", "standard"]
 
@@ -271,6 +276,7 @@ class PipelineSummary(ApiModel):
     title: str
     status: PipelineStatus
     summary: str
+    plain_language_summary: str | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
 
@@ -299,6 +305,105 @@ class ChatMessageCreate(ApiModel):
     role: Literal["ai", "human", "system"]
     author: str
     content: str
+
+
+class IntakeProfile(ApiModel):
+    id: str
+    project_id: str
+    name: str
+    client_name: str
+    source_kind: Literal["local_directory", "github", "azure_repos"]
+    source_target: str
+    expected_users: int
+    preferred_cloud: Literal["aws", "gcp", "azure"] = "aws"
+    business_constraints: list[str] = Field(default_factory=list)
+    compliance_notes: list[str] = Field(default_factory=list)
+    credential_label: str
+    credential_kind: CredentialKind
+    founder_summary: str
+
+
+class ProjectCreate(ApiModel):
+    name: str
+    client_name: str
+    source_kind: Literal["local_directory", "github", "azure_repos"] | None = None
+    source_target: str | None = None
+    expected_users: int | None = Field(default=None, ge=1)
+    preferred_cloud: Literal["aws", "gcp", "azure"] = "aws"
+    business_constraints: list[str] = Field(default_factory=list)
+    compliance_notes: list[str] = Field(default_factory=list)
+    credential_label: str | None = None
+    credential_kind: CredentialKind | None = None
+    source_system: str | None = None
+    target_system: str | None = None
+    business_summary: str | None = None
+    owner: str | None = None
+    primary_region: str | None = None
+    compliance_tags: list[str] = Field(default_factory=list)
+
+
+class PlatformRecommendation(ApiModel):
+    platform_key: Literal["vercel", "railway", "aws-ec2", "aws-ecs", "aws-lambda", "cloudflare-workers"]
+    label: str
+    fit_score: int
+    best_for: str
+    rationale: str
+    plain_language_rationale: str
+    tradeoffs: list[str]
+    monthly_cost_estimate: str
+    scaling_threshold: str
+    execution_ready: bool = False
+
+
+class DeploymentArtifact(ApiModel):
+    id: str
+    kind: Literal["terraform", "ansible", "checklist"]
+    title: str
+    summary: str
+    preview: str
+
+
+class DeploymentExecution(ApiModel):
+    id: str
+    provider: Literal["aws"]
+    mode: Literal["dry_run", "apply"]
+    status: RunStatus
+    triggered_by: str
+    summary: str
+    created_at: datetime
+    next_steps: list[str] = Field(default_factory=list)
+
+
+class DeploymentExecutionRequest(ApiModel):
+    provider: Literal["aws"]
+    mode: Literal["dry_run", "apply"]
+    triggered_by: str
+
+
+class DeploymentPlan(ApiModel):
+    project_id: str
+    execution_state: Literal["blocked", "ready", "in_progress", "succeeded"]
+    founder_summary: str
+    recommended_platform: PlatformRecommendation
+    platform_options: list[PlatformRecommendation]
+    required_actions: list[str]
+    artifacts: list[DeploymentArtifact]
+    last_execution: DeploymentExecution | None = None
+
+
+class ObservabilityTrace(ApiModel):
+    id: str
+    stage_key: PipelineKey
+    agent_key: str
+    title: str
+    status: RunStatus
+    summary: str
+    confidence: float
+    latency_ms: int
+    evidence_count: int
+    warnings: list[str] = Field(default_factory=list)
+    evaluation_summary: str
+    question_checkpoint: str | None = None
 
 
 class AgentRun(ApiModel):
@@ -392,17 +497,6 @@ class WorkspaceContext(ApiModel):
     workspace: WorkspaceSummary
     client_accounts: list[ClientAccountSummary]
     projects: list[ProjectOverview]
-
-
-class ProjectCreate(ApiModel):
-    name: str
-    client_name: str
-    source_system: str
-    target_system: str
-    business_summary: str
-    owner: str
-    primary_region: str
-    compliance_tags: list[str] = Field(default_factory=list)
 
 
 class DashboardSummary(ApiModel):
@@ -509,6 +603,10 @@ class ProjectSeed(ApiModel):
     reports: list[Report]
     artifacts: list[ReportArtifact]
     assessment_runs: list[AssessmentRun] = Field(default_factory=list)
+    intake_profile: IntakeProfile | None = None
+    deployment_plan: DeploymentPlan | None = None
+    observability_traces: list[ObservabilityTrace] = Field(default_factory=list)
+    deployment_executions: list[DeploymentExecution] = Field(default_factory=list)
 
 
 class AssessmentBundle(ApiModel):

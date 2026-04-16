@@ -2,13 +2,16 @@ import type {
   ApprovalRecord,
   AgentRun,
   AuditEvent,
+  DeploymentPlan,
+  ObservabilityTrace,
+  PipelineSummary,
   Report,
   ReportArtifact,
   ScenarioDiff
 } from "@contracts/index";
 import { Badge, Card, MetricCard, PillList } from "@/components/ui";
+import type { ConnectorItem, EvalSummary, ProjectDataset } from "@/lib/mock-data";
 import { formatConfidence, formatDateTime, formatPercent } from "@/lib/format";
-import type { ConnectorItem, EvalSummary, ProjectDataset } from "@/lib/project-dataset";
 
 export function ExecutiveRibbon({
   overview,
@@ -172,15 +175,7 @@ export function CommandCenterPanel({
                     <p className="text-sm font-medium text-white">{connector.name}</p>
                     <p className="mt-1 text-sm text-slate-300">{connector.details}</p>
                   </div>
-                  <Badge
-                    tone={
-                      connector.status === "connected"
-                        ? "green"
-                        : connector.status === "proposed" || connector.status === "needs_configuration"
-                          ? "amber"
-                          : "slate"
-                    }
-                  >
+                  <Badge tone={connector.status === "connected" ? "green" : connector.status === "proposed" ? "amber" : "slate"}>
                     {connector.status}
                   </Badge>
                 </div>
@@ -273,6 +268,96 @@ export function ReportCenterPanel({
               ))}
             </div>
           </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+export function MtcPipelinePanel({ mtcPipeline }: { mtcPipeline: PipelineSummary[] }) {
+  return (
+    <Card className="space-y-4">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.28em] text-slate-400">MTC pipeline</p>
+          <h3 className="mt-2 text-xl font-medium text-white">Analysis to deployment workflow</h3>
+        </div>
+        <Badge tone="blue">{mtcPipeline.length} stages</Badge>
+      </div>
+      <div className="grid gap-3 xl:grid-cols-2">
+        {mtcPipeline.map((stage) => (
+          <div key={stage.pipelineKey} className="rounded-3xl bg-white/5 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <h4 className="text-base font-medium text-white">{stage.title}</h4>
+              <Badge tone={stage.status === "succeeded" ? "green" : stage.status === "blocked" ? "amber" : "slate"}>{stage.status}</Badge>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-slate-300">{stage.summary}</p>
+            {stage.plainLanguageSummary ? <p className="mt-2 text-sm leading-6 text-sky-100/80">{stage.plainLanguageSummary}</p> : null}
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+export function ObservabilityPanel({ observability }: { observability: ObservabilityTrace[] }) {
+  return (
+    <Card className="space-y-4">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Agent observability</p>
+          <h3 className="mt-2 text-xl font-medium text-white">Trace the swarm step-by-step</h3>
+        </div>
+        <Badge tone="blue">{observability.length} traces</Badge>
+      </div>
+      <div className="space-y-3">
+        {observability.map((trace) => (
+          <div key={trace.id} className="rounded-3xl bg-white/5 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-base font-medium text-white">{trace.title}</p>
+                <p className="text-sm text-slate-300">{trace.agentKey}</p>
+              </div>
+              <div className="flex gap-2">
+                <Badge tone="slate">{trace.evidenceCount} evidence</Badge>
+                <Badge tone="blue">{trace.latencyMs} ms</Badge>
+              </div>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-slate-300">{trace.summary}</p>
+            <p className="mt-2 text-sm leading-6 text-sky-100/80">{trace.evaluationSummary}</p>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+export function DeploymentReadinessPanel({ deploymentPlan }: { deploymentPlan: DeploymentPlan }) {
+  return (
+    <Card className="space-y-4">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Deployment readiness</p>
+          <h3 className="mt-2 text-xl font-medium text-white">Right-sized deployment recommendation</h3>
+        </div>
+        <Badge tone={deploymentPlan.executionState === "blocked" ? "amber" : "green"}>{deploymentPlan.executionState}</Badge>
+      </div>
+      <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+        <div className="rounded-3xl bg-white/5 p-4">
+          <p className="text-sm font-medium text-white">{deploymentPlan.recommendedPlatform.label}</p>
+          <p className="mt-2 text-sm leading-6 text-slate-300">{deploymentPlan.founderSummary}</p>
+          <p className="mt-2 text-sm leading-6 text-sky-100/80">{deploymentPlan.recommendedPlatform.plainLanguageRationale}</p>
+        </div>
+        <div className="space-y-3">
+          {deploymentPlan.platformOptions.slice(0, 4).map((option) => (
+            <div key={option.platformKey} className="rounded-2xl border border-white/8 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-medium text-white">{option.label}</span>
+                <Badge tone="slate">{option.fitScore}</Badge>
+              </div>
+              <p className="mt-2 text-sm leading-6 text-slate-300">{option.plainLanguageRationale}</p>
+            </div>
+          ))}
         </div>
       </div>
     </Card>

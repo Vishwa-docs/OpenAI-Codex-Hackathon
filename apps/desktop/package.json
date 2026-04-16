@@ -1,0 +1,14 @@
+{
+  "name": "@cloud-migration-cockpit/desktop",
+  "private": true,
+  "version": "0.1.0",
+  "main": "main.js",
+  "scripts": {
+    "dev": "electron .",
+    "build": "echo Desktop packaging is configured through Electron entrypoints and can be wired to electron-builder in CI.",
+    "smoke": "node smoke-test.js"
+  },
+  "devDependencies": {
+    "electron": "^35.0.0"
+  }
+}

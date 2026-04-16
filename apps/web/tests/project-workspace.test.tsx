@@ -1,6 +1,13 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { CommandCenterPanel, ExecutiveRibbon, ReportCenterPanel } from "@/components/project-workspace";
+import {
+  CommandCenterPanel,
+  DeploymentReadinessPanel,
+  ExecutiveRibbon,
+  MtcPipelinePanel,
+  ObservabilityPanel,
+  ReportCenterPanel
+} from "@/components/project-workspace";
 import { createMockProjectDataset } from "@/lib/mock-data";
 
 describe("project workspace panels", () => {
@@ -33,11 +40,17 @@ describe("project workspace panels", () => {
           evaluation={project.evaluation}
         />
         <ReportCenterPanel artifacts={project.artifacts} reports={project.reports} exportFormats={project.exportFormats} />
+        <MtcPipelinePanel mtcPipeline={project.mtcPipeline} />
+        <ObservabilityPanel observability={project.observability} />
+        <DeploymentReadinessPanel deploymentPlan={project.deploymentPlan} />
       </>
     );
 
     expect(screen.getByText("Command center")).toBeInTheDocument();
     expect(screen.getByText("Report center")).toBeInTheDocument();
     expect(screen.getByText("Executive Summary PDF")).toBeInTheDocument();
+    expect(screen.getByText("MTC pipeline")).toBeInTheDocument();
+    expect(screen.getByText("Agent observability")).toBeInTheDocument();
+    expect(screen.getAllByText("Deployment readiness").length).toBeGreaterThan(0);
   });
 });

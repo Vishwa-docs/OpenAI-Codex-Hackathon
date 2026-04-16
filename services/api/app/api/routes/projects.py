@@ -6,8 +6,8 @@ from fastapi.responses import Response
 from ...dependencies import get_orchestrator, get_report_exporter
 from ...domain.models import (
     AgentRun,
-    ApprovalDecision,
     ApprovalRecord,
+    ApprovalDecision,
     ArtifactFormat,
     AssessmentRun,
     AssessmentRunCreate,
@@ -17,25 +17,41 @@ from ...domain.models import (
     CloudConnection,
     CloudConnectionCreate,
     CostRoiSummary,
+    DeploymentExecution,
+    DeploymentExecutionRequest,
+    DeploymentPlan,
     DependencyGraph,
     EvalRun,
     FactoryProposal,
     Finding,
+    IntakeProfile,
+    ObservabilityTrace,
+    ProjectCreate,
     ProjectOverview,
     ProviderOption,
     RegistryEntry,
     Report,
     ReportArtifact,
+    SourceConnection,
+    SourceConnectionCreate,
     RiskComplianceSummary,
     Scenario,
     ScenarioDiff,
-    SourceConnection,
-    SourceConnectionCreate,
 )
 from ...services.orchestration import AssessmentOrchestrator
 from ...services.reporting import ReportExporter
 
-router = APIRouter(prefix="/projects/{project_id}")
+router = APIRouter()
+
+@router.post("/projects", response_model=IntakeProfile, status_code=201)
+def create_project(
+    draft: ProjectCreate,
+    orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
+) -> IntakeProfile:
+    return orchestrator.create_project(**draft.model_dump())
+
+
+project_router = APIRouter(prefix="/projects/{project_id}")
 
 
 def _assessment(orchestrator: AssessmentOrchestrator, project_id: str):
@@ -52,7 +68,7 @@ def _project_lookup(project_id: str, loader):
         raise HTTPException(status_code=404, detail=f"Unknown project: {project_id}") from exc
 
 
-@router.get("/overview", response_model=ProjectOverview)
+@project_router.get("/overview", response_model=ProjectOverview)
 def project_overview(
     project_id: str,
     orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
@@ -60,7 +76,7 @@ def project_overview(
     return _assessment(orchestrator, project_id).overview
 
 
-@router.get("/assessment", response_model=AssessmentRun)
+@project_router.get("/assessment", response_model=AssessmentRun)
 def project_assessment(
     project_id: str,
     orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
@@ -68,7 +84,7 @@ def project_assessment(
     return _assessment(orchestrator, project_id).run
 
 
-@router.get("/dependency-graph", response_model=DependencyGraph)
+@project_router.get("/dependency-graph", response_model=DependencyGraph)
 def dependency_graph(
     project_id: str,
     orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
@@ -76,7 +92,7 @@ def dependency_graph(
     return _assessment(orchestrator, project_id).graph
 
 
-@router.get("/findings", response_model=list[Finding])
+@project_router.get("/findings", response_model=list[Finding])
 def project_findings(
     project_id: str,
     orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
@@ -84,7 +100,7 @@ def project_findings(
     return _assessment(orchestrator, project_id).findings
 
 
-@router.get("/provider-comparison", response_model=list[ProviderOption])
+@project_router.get("/provider-comparison", response_model=list[ProviderOption])
 def provider_comparison(
     project_id: str,
     orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
@@ -92,7 +108,7 @@ def provider_comparison(
     return _assessment(orchestrator, project_id).provider_options
 
 
-@router.get("/cost-roi", response_model=CostRoiSummary)
+@project_router.get("/cost-roi", response_model=CostRoiSummary)
 def cost_roi(
     project_id: str,
     orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
@@ -100,7 +116,7 @@ def cost_roi(
     return _assessment(orchestrator, project_id).cost_roi
 
 
-@router.get("/risk-compliance", response_model=RiskComplianceSummary)
+@project_router.get("/risk-compliance", response_model=RiskComplianceSummary)
 def risk_compliance(
     project_id: str,
     orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
@@ -108,7 +124,7 @@ def risk_compliance(
     return _assessment(orchestrator, project_id).risk_compliance
 
 
-@router.get("/scenarios", response_model=list[Scenario])
+@project_router.get("/scenarios", response_model=list[Scenario])
 def scenarios(
     project_id: str,
     orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
@@ -116,7 +132,7 @@ def scenarios(
     return _assessment(orchestrator, project_id).scenarios
 
 
-@router.get("/scenario-diffs", response_model=list[ScenarioDiff])
+@project_router.get("/scenario-diffs", response_model=list[ScenarioDiff])
 def scenario_diffs(
     project_id: str,
     orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
@@ -124,7 +140,7 @@ def scenario_diffs(
     return _project_lookup(project_id, orchestrator.list_scenario_diffs)
 
 
-@router.get("/reports", response_model=list[Report])
+@project_router.get("/reports", response_model=list[Report])
 def reports(
     project_id: str,
     orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
@@ -132,7 +148,7 @@ def reports(
     return _assessment(orchestrator, project_id).reports
 
 
-@router.get("/artifacts", response_model=list[ReportArtifact])
+@project_router.get("/artifacts", response_model=list[ReportArtifact])
 def artifacts(
     project_id: str,
     orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
@@ -140,7 +156,7 @@ def artifacts(
     return _assessment(orchestrator, project_id).artifacts
 
 
-@router.get("/reports/{report_id}")
+@project_router.get("/reports/{report_id}")
 def report_detail(
     project_id: str,
     report_id: str,
@@ -153,7 +169,7 @@ def report_detail(
     raise HTTPException(status_code=404, detail=f"Unknown report: {report_id}")
 
 
-@router.get("/reports/{report_id}/export")
+@project_router.get("/reports/{report_id}/export")
 def export_report(
     project_id: str,
     report_id: str,
@@ -171,7 +187,7 @@ def export_report(
     return Response(content=payload, media_type=media_type, headers=headers)
 
 
-@router.get("/source-connections", response_model=list[SourceConnection])
+@project_router.get("/source-connections", response_model=list[SourceConnection])
 def source_connections(
     project_id: str,
     orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
@@ -179,7 +195,7 @@ def source_connections(
     return _project_lookup(project_id, orchestrator.list_source_connections)
 
 
-@router.post("/source-connections", response_model=SourceConnection, status_code=201)
+@project_router.post("/source-connections", response_model=SourceConnection, status_code=201)
 def create_source_connection(
     project_id: str,
     draft: SourceConnectionCreate,
@@ -188,7 +204,7 @@ def create_source_connection(
     return _project_lookup(project_id, lambda pid: orchestrator.create_source_connection(pid, draft))
 
 
-@router.get("/cloud-connections", response_model=list[CloudConnection])
+@project_router.get("/cloud-connections", response_model=list[CloudConnection])
 def cloud_connections(
     project_id: str,
     orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
@@ -196,7 +212,7 @@ def cloud_connections(
     return _project_lookup(project_id, orchestrator.list_cloud_connections)
 
 
-@router.post("/cloud-connections", response_model=CloudConnection, status_code=201)
+@project_router.post("/cloud-connections", response_model=CloudConnection, status_code=201)
 def create_cloud_connection(
     project_id: str,
     draft: CloudConnectionCreate,
@@ -205,7 +221,7 @@ def create_cloud_connection(
     return _project_lookup(project_id, lambda pid: orchestrator.create_cloud_connection(pid, draft))
 
 
-@router.get("/assessment-runs", response_model=list[AssessmentRun])
+@project_router.get("/assessment-runs", response_model=list[AssessmentRun])
 def assessment_runs(
     project_id: str,
     orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
@@ -213,7 +229,7 @@ def assessment_runs(
     return _project_lookup(project_id, orchestrator.list_assessment_runs)
 
 
-@router.post("/assessment-runs", response_model=AssessmentRun, status_code=201)
+@project_router.post("/assessment-runs", response_model=AssessmentRun, status_code=201)
 def create_assessment_run(
     project_id: str,
     request: AssessmentRunCreate,
@@ -222,7 +238,7 @@ def create_assessment_run(
     return _project_lookup(project_id, lambda pid: orchestrator.create_assessment_run(pid, request))
 
 
-@router.get("/agent-runs", response_model=list[AgentRun])
+@project_router.get("/agent-runs", response_model=list[AgentRun])
 def agent_runs(
     project_id: str,
     orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
@@ -230,7 +246,7 @@ def agent_runs(
     return _project_lookup(project_id, orchestrator.list_agent_runs)
 
 
-@router.get("/eval-runs", response_model=list[EvalRun])
+@project_router.get("/eval-runs", response_model=list[EvalRun])
 def eval_runs(
     project_id: str,
     orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
@@ -238,7 +254,7 @@ def eval_runs(
     return _project_lookup(project_id, orchestrator.list_eval_runs)
 
 
-@router.get("/factory-proposals", response_model=list[FactoryProposal])
+@project_router.get("/factory-proposals", response_model=list[FactoryProposal])
 def factory_proposals(
     project_id: str,
     orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
@@ -246,7 +262,7 @@ def factory_proposals(
     return _project_lookup(project_id, orchestrator.list_factory_proposals)
 
 
-@router.get("/chat/messages", response_model=list[ChatMessage])
+@project_router.get("/chat/messages", response_model=list[ChatMessage])
 def chat_messages(
     project_id: str,
     orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
@@ -254,7 +270,7 @@ def chat_messages(
     return _project_lookup(project_id, orchestrator.list_chat_messages)
 
 
-@router.post("/chat/messages", response_model=ChatMessage, status_code=201)
+@project_router.post("/chat/messages", response_model=ChatMessage, status_code=201)
 def create_chat_message(
     project_id: str,
     draft: ChatMessageCreate,
@@ -263,7 +279,7 @@ def create_chat_message(
     return _project_lookup(project_id, lambda pid: orchestrator.create_chat_message(pid, draft))
 
 
-@router.get("/approvals", response_model=list[ApprovalRecord])
+@project_router.get("/approvals", response_model=list[ApprovalRecord])
 def approvals(
     project_id: str,
     orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
@@ -271,7 +287,7 @@ def approvals(
     return _assessment(orchestrator, project_id).approvals
 
 
-@router.post("/approvals/{approval_id}/decision", response_model=ApprovalRecord)
+@project_router.post("/approvals/{approval_id}/decision", response_model=ApprovalRecord)
 def decide_approval(
     project_id: str,
     approval_id: str,
@@ -284,7 +300,7 @@ def decide_approval(
         raise HTTPException(status_code=404, detail=f"Unknown approval: {approval_id}") from exc
 
 
-@router.get("/audit-events", response_model=list[AuditEvent])
+@project_router.get("/audit-events", response_model=list[AuditEvent])
 def audit_events(
     project_id: str,
     orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
@@ -292,9 +308,50 @@ def audit_events(
     return _assessment(orchestrator, project_id).audit_events
 
 
-@router.get("/registry-entries", response_model=list[RegistryEntry])
+@project_router.get("/registry-entries", response_model=list[RegistryEntry])
 def project_registry_entries(
     project_id: str,
     orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
 ) -> list[RegistryEntry]:
     return _assessment(orchestrator, project_id).registry_entries
+
+
+@project_router.get("/intake", response_model=IntakeProfile)
+def intake_profile(
+    project_id: str,
+    orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
+) -> IntakeProfile:
+    return _project_lookup(project_id, orchestrator.get_intake_profile)
+
+
+@project_router.get("/observability-traces", response_model=list[ObservabilityTrace])
+def observability_traces(
+    project_id: str,
+    orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
+) -> list[ObservabilityTrace]:
+    return _project_lookup(project_id, orchestrator.list_observability_traces)
+
+
+@project_router.get("/deployment-plan", response_model=DeploymentPlan)
+def deployment_plan(
+    project_id: str,
+    orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
+) -> DeploymentPlan:
+    return _project_lookup(project_id, orchestrator.get_deployment_plan)
+
+
+@project_router.post("/deployment-executions", response_model=DeploymentExecution, status_code=201)
+def deployment_execution(
+    project_id: str,
+    request: DeploymentExecutionRequest,
+    orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
+) -> DeploymentExecution:
+    try:
+        return orchestrator.execute_deployment(project_id, request)
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+router.include_router(project_router)

@@ -14,6 +14,9 @@ import type {
   EvidenceReference,
   FactoryProposal,
   Finding,
+  IntakeProfile,
+  ObservabilityTrace,
+  DeploymentPlan,
   ProjectOverview,
   ProviderOption,
   Recommendation,
@@ -32,7 +35,7 @@ export interface ConnectorItem {
   id: string;
   name: string;
   kind: "source" | "cloud" | "observability" | "registry";
-  status: "connected" | "needs_attention" | "needs_configuration" | "proposed" | "disabled";
+  status: "connected" | "needs_attention" | "proposed" | "disabled";
   details: string;
   lastSyncAt?: string;
 }
@@ -88,6 +91,10 @@ export interface ProjectDataset {
   evaluation: EvalSummary;
   reportHighlights: string[];
   exportFormats: string[];
+  intake: IntakeProfile;
+  mtcPipeline: import("@contracts/index").PipelineSummary[];
+  observability: ObservabilityTrace[];
+  deploymentPlan: DeploymentPlan;
   costModel: {
     currentMonthlyRunRate: number;
     targetMonthlyRunRate: number;
@@ -228,7 +235,7 @@ const providers: ProviderOption[] = [
     bestFor: "IAM, managed databases, and a broad execution surface for cloud migration programs.",
     tradeoffs: ["Broad service surface needs tighter guardrails", "Requires upfront landing zone discipline"],
     confidence: 0.9,
-    rationale: "AWS best matches the roadmap for IAM, managed database services, and future dry-run execution.",
+    rationale: "AWS best matches the seeded roadmap for IAM, managed database services, and future dry-run execution.",
     evidence
   },
   {
@@ -236,7 +243,7 @@ const providers: ProviderOption[] = [
     name: "Google Cloud",
     score: 79,
     bestFor: "Data-centric platforms with strong analytics and container primitives.",
-    tradeoffs: ["Fewer migration-specific guardrails in this scenario", "Less aligned with the current operating model"],
+    tradeoffs: ["Fewer migration-specific guardrails in this seed scenario", "Less aligned with the current ops model"],
     confidence: 0.82,
     rationale: "A credible modernization option, but less aligned with the AWS-first execution path.",
     evidence
@@ -246,9 +253,9 @@ const providers: ProviderOption[] = [
     name: "Azure",
     score: 76,
     bestFor: "Microsoft-centric enterprises and identity-heavy rollouts.",
-    tradeoffs: ["Current app stack and operations patterns do not benefit as much in this scenario", "Requires extra explanation to stakeholders"],
+    tradeoffs: ["Current app stack and ops patterns do not benefit as much in the MVP demo", "Requires extra explanation to stakeholders"],
     confidence: 0.79,
-    rationale: "Strong enterprise controls, but the workspace has AWS-first execution and limited Azure-specific connectors.",
+    rationale: "Strong enterprise controls, but the MVP has AWS-first execution and limited Azure-specific connectors.",
     evidence
   }
 ];
@@ -450,7 +457,7 @@ const approvals: ApprovalRecord[] = [
     state: "approved",
     requestedBy: "Mia Chen",
     approver: "Jordan Patel",
-    comment: "Assessment run approved for workspace scope.",
+    comment: "Assessment run approved for demo scope.",
     decidedAt: "2026-04-16T06:14:00Z"
   },
   {
@@ -479,7 +486,7 @@ const auditEvents: AuditEvent[] = [
     entityType: "migration_project",
     entityId: "legacycart",
     createdAt: "2026-04-16T06:11:00Z",
-    metadata: { mode: "local", source: "local-worker" }
+    metadata: { mode: "seeded", source: "local-worker" }
   },
   {
     id: "audit-002",
@@ -537,17 +544,17 @@ const chat: ChatMessage[] = [
     author: "Cockpit Assistant",
     role: "ai",
     createdAt: "2026-04-16T06:13:55Z",
-    content: "AWS remains the best match here because the migration blockers are operational rather than platform-specific, and AWS gives us the strongest landing-zone and IAM primitives for the workspace."
+    content: "AWS remains the best match in this seed because the migration blockers are operational rather than platform-specific, and AWS gives us the strongest landing-zone and IAM primitives for the demo."
   }
 ];
 
 const connectors: ConnectorItem[] = [
   {
     id: "conn-001",
-    name: "Assessment local directory",
+    name: "Local directory",
     kind: "source",
     status: "connected",
-    details: "Scans `demo-systems/legacycart` and normalizes files, logs, and manifests for the workspace.",
+    details: "Scans `demo-systems/legacycart` and normalizes files, logs, and manifests.",
     lastSyncAt: "2026-04-16T06:10:00Z"
   },
   {
@@ -580,13 +587,13 @@ const sourceConnections: SourceConnection[] = [
   {
     id: "source-local-legacycart",
     kind: "local_directory",
-    name: "Assessment local directory",
+    name: "LegacyCart local directory",
     status: "connected",
     mode: "read_only",
     target: "demo-systems/legacycart",
     lastSyncAt: "2026-04-16T06:10:00Z",
     credentialRef: { id: "cred-none-local", kind: "none", label: "No credential required", redactedValue: "n/a" },
-    notes: ["Primary local source for the workspace."]
+    notes: ["Primary seeded source for the local product demo."]
   },
   {
     id: "source-github-template",
@@ -696,10 +703,10 @@ const evalRuns: EvalRun[] = [
     completedAt: "2026-04-16T06:12:05Z",
     metrics: [
       { metricKey: "citation_coverage", label: "Citation coverage", score: 96, summary: "Recommendations remain linked to evidence.", status: "pass" },
-      { metricKey: "unsupported_claim_rate", label: "Unsupported claim rate", score: 92, summary: "Workspace outputs keep unsupported claims low.", status: "pass" },
+      { metricKey: "unsupported_claim_rate", label: "Unsupported claim rate", score: 92, summary: "Seeded outputs keep unsupported claims low.", status: "pass" },
       { metricKey: "recommendation_consistency", label: "Recommendation consistency", score: 89, summary: "Specialist-agent outputs converge on the same final recommendation.", status: "pass" },
       { metricKey: "cost_sanity", label: "Cost sanity", score: 84, summary: "Cost model assumptions are directionally sound but still scenario-based.", status: "warn" },
-      { metricKey: "latency", label: "Agent latency", score: 87, summary: "Assessment finished comfortably within local runtime expectations.", status: "pass" },
+      { metricKey: "latency", label: "Agent latency", score: 87, summary: "Assessment finished comfortably within local demo expectations.", status: "pass" },
       { metricKey: "policy_compliance", label: "Policy compliance", score: 90, summary: "Discovery remains read-only and execution stays approval-gated.", status: "pass" }
     ]
   }
@@ -754,8 +761,241 @@ const evaluation: EvalSummary = {
   checks: [
     { name: "Report completeness", score: 91, note: "All major business and technical sections are represented." },
     { name: "Citation coverage", score: 96, note: "Findings and recommendations are linked to evidence refs." },
-    { name: "Unsupported claim rate", score: 92, note: "The workspace story keeps claims grounded in evidence." },
+    { name: "Unsupported claim rate", score: 92, note: "The seeded story keeps claims grounded in evidence." },
     { name: "Action safety compliance", score: 84, note: "Writes remain gated and the AWS adapter is disabled." }
+  ]
+};
+
+const intake: IntakeProfile = {
+  id: "legacycart",
+  projectId: "legacycart",
+  name: "LegacyCart migration assessment",
+  clientName: "Northwind Retail Group",
+  sourceKind: "local_directory",
+  sourceTarget: "demo-systems/legacycart",
+  expectedUsers: 25,
+  preferredCloud: "aws",
+  businessConstraints: ["Launch quickly", "Keep ops simple"],
+  complianceNotes: ["PII handling", "Basic audit trail"],
+  credentialLabel: "Local folder",
+  credentialKind: "none",
+  founderSummary:
+    "This project is sized for an early production rollout, so the cockpit should favor simpler hosting unless the codebase clearly needs something heavier."
+};
+
+const mtcPipeline = [
+  {
+    pipelineKey: "intake_clarification",
+    title: "Intake and clarification",
+    status: "succeeded",
+    summary: "Captured source path, expected users, and founder-friendly constraints.",
+    plainLanguageSummary: "We start by understanding the app, the code location, and how much scale is expected."
+  },
+  {
+    pipelineKey: "codebase_discovery",
+    title: "Codebase discovery",
+    status: "succeeded",
+    summary: "Scanned the project for runtimes, data stores, jobs, and deployment hints."
+  },
+  {
+    pipelineKey: "architecture_analysis",
+    title: "Architecture analysis",
+    status: "succeeded",
+    summary: "Mapped the monolith, jobs, storage, and integration boundaries."
+  },
+  {
+    pipelineKey: "security_readiness",
+    title: "Security and readiness review",
+    status: "succeeded",
+    summary: "Flagged secrets, logging, and delivery blockers before deployment planning."
+  },
+  {
+    pipelineKey: "hosting_fit_recommendation",
+    title: "Hosting-fit recommendation",
+    status: "succeeded",
+    summary: "Compared simple and advanced deployment targets instead of defaulting to microservices."
+  },
+  {
+    pipelineKey: "migration_strategy",
+    title: "Migration strategy selection",
+    status: "succeeded",
+    summary: "Recommended phased replatforming over an unsafe direct lift-and-shift."
+  },
+  {
+    pipelineKey: "infra_plan_generation",
+    title: "Infrastructure plan generation",
+    status: "succeeded",
+    summary: "Prepared Terraform and Ansible starter assets."
+  },
+  {
+    pipelineKey: "evaluation_critique",
+    title: "Evaluation and critique",
+    status: "succeeded",
+    summary: "Critic agents confirmed the recommendation remains evidence-backed."
+  },
+  {
+    pipelineKey: "deployment_readiness",
+    title: "Deployment readiness",
+    status: "blocked",
+    summary: "Waiting for AWS credentials and planning approval."
+  },
+  {
+    pipelineKey: "aws_execution",
+    title: "AWS execution",
+    status: "blocked",
+    summary: "Deployment remains disabled until credentials are connected."
+  },
+  {
+    pipelineKey: "post_deploy_validation",
+    title: "Post-deploy validation",
+    status: "queued",
+    summary: "Health, cost, and next-step validation are prepared for after rollout."
+  }
+] satisfies import("@contracts/index").PipelineSummary[];
+
+const observability: ObservabilityTrace[] = [
+  {
+    id: "obs-001",
+    stageKey: "intake_clarification",
+    agentKey: "founder_intake_guide",
+    title: "Founder Intake Guide",
+    status: "succeeded",
+    summary: "Captured expected users and flagged that simple hosting should be considered first.",
+    confidence: 0.93,
+    latencyMs: 180,
+    evidenceCount: 2,
+    warnings: [],
+    evaluationSummary: "The questions were sufficient to keep the recommendation right-sized.",
+    questionCheckpoint: "How many users are expected in the first production phase?"
+  },
+  {
+    id: "obs-002",
+    stageKey: "codebase_discovery",
+    agentKey: "codebase_discovery",
+    title: "Codebase Discovery",
+    status: "succeeded",
+    summary: "Detected backend, admin UI, jobs, and storage dependencies.",
+    confidence: 0.91,
+    latencyMs: 410,
+    evidenceCount: 6,
+    warnings: [],
+    evaluationSummary: "Discovery remained read-only and evidence-backed."
+  },
+  {
+    id: "obs-003",
+    stageKey: "hosting_fit_recommendation",
+    agentKey: "hosting_fit_advisor",
+    title: "Hosting Fit Advisor",
+    status: "succeeded",
+    summary: "Compared Vercel, Railway, EC2, ECS, Lambda, and Workers without over-prescribing complexity.",
+    confidence: 0.89,
+    latencyMs: 220,
+    evidenceCount: 4,
+    warnings: ["Managed microservices were deprioritized for the current traffic estimate."],
+    evaluationSummary: "The recommendation stayed aligned with expected-user input and code shape."
+  },
+  {
+    id: "obs-004",
+    stageKey: "evaluation_critique",
+    agentKey: "migration_critic",
+    title: "Migration Critic",
+    status: "succeeded",
+    summary: "Validated evidence quality, safety gates, and founder-facing clarity.",
+    confidence: 0.9,
+    latencyMs: 205,
+    evidenceCount: 3,
+    warnings: [],
+    evaluationSummary: "No unsupported claims were promoted into the final plan."
+  }
+];
+
+const deploymentPlan: DeploymentPlan = {
+  projectId: "legacycart",
+  executionState: "blocked",
+  founderSummary:
+    "In plain language: for about 25 users, a simple AWS EC2 rollout is more realistic than jumping straight to managed microservices.",
+  recommendedPlatform: {
+    platformKey: "aws-ec2",
+    label: "AWS EC2",
+    fitScore: 90,
+    bestFor: "Simple backends and early production hardening.",
+    rationale: "A VM-first AWS landing gives enough control without forcing unnecessary microservice complexity.",
+    plainLanguageRationale: "A simple server on AWS is often the best first production step when the app is still small.",
+    tradeoffs: ["More manual ops than platform services", "Needs patching and monitoring discipline"],
+    monthlyCostEstimate: "$40-$300",
+    scalingThreshold: "Strong first step up to a few hundred users",
+    executionReady: false
+  },
+  platformOptions: [
+    {
+      platformKey: "vercel",
+      label: "Vercel",
+      fitScore: 72,
+      bestFor: "Frontend-heavy launches.",
+      rationale: "Excellent for static or frontend-heavy products.",
+      plainLanguageRationale: "Fastest way to launch a mostly frontend app.",
+      tradeoffs: ["Not ideal for heavy jobs", "Backend flexibility is limited"],
+      monthlyCostEstimate: "$20-$150",
+      scalingThreshold: "Best under roughly 50-100 active users",
+      executionReady: false
+    },
+    {
+      platformKey: "railway",
+      label: "Railway",
+      fitScore: 81,
+      bestFor: "Simple full-stack apps.",
+      rationale: "Good bridge option for a lean team with a small backend.",
+      plainLanguageRationale: "Useful when you need a backend but still want low operational overhead.",
+      tradeoffs: ["Less control than AWS", "Can get expensive at higher scale"],
+      monthlyCostEstimate: "$20-$250",
+      scalingThreshold: "Best under roughly 100-200 active users",
+      executionReady: false
+    },
+    {
+      platformKey: "aws-ec2",
+      label: "AWS EC2",
+      fitScore: 90,
+      bestFor: "Simple backends and early production hardening.",
+      rationale: "A VM-first AWS landing gives enough control without forcing unnecessary microservice complexity.",
+      plainLanguageRationale: "A simple server on AWS is often the best first production step when the app is still small.",
+      tradeoffs: ["More manual ops than platform services", "Needs patching and monitoring discipline"],
+      monthlyCostEstimate: "$40-$300",
+      scalingThreshold: "Strong first step up to a few hundred users",
+      executionReady: false
+    },
+    {
+      platformKey: "aws-ecs",
+      label: "AWS ECS / Fargate",
+      fitScore: 68,
+      bestFor: "Containerized apps with clearer service boundaries.",
+      rationale: "Good once the team is ready for more platform automation.",
+      plainLanguageRationale: "A stronger long-term path, but more setup than you may need today.",
+      tradeoffs: ["More moving parts", "Higher platform complexity"],
+      monthlyCostEstimate: "$120-$700",
+      scalingThreshold: "Best when growth and ops maturity justify orchestration",
+      executionReady: false
+    }
+  ],
+  requiredActions: [
+    "Connect an AWS credential or assumed role in the cockpit.",
+    "Review the Terraform and Ansible previews.",
+    "Approve the planning phase before running apply mode."
+  ],
+  artifacts: [
+    {
+      id: "artifact-deploy-terraform",
+      kind: "terraform",
+      title: "AWS landing zone Terraform starter",
+      summary: "Creates the network, host, storage, and security building blocks.",
+      preview: 'module "app_host" { source = "./modules/ec2_or_app" }'
+    },
+    {
+      id: "artifact-deploy-ansible",
+      kind: "ansible",
+      title: "Bootstrap playbook",
+      summary: "Installs runtime dependencies and observability agents for VM-first paths.",
+      preview: "- hosts: app\n  tasks:\n    - name: Install runtime packages"
+    }
   ]
 };
 
@@ -768,7 +1008,7 @@ export function createMockDashboardSummary(): DashboardSummary {
     topProjects: [
       {
         id: "legacycart",
-        name: "Retail commerce modernization assessment",
+        name: "LegacyCart migration assessment",
         clientName: "Northwind Retail Group",
         readinessScore: 52,
         migrationDecision: "Defer until blockers are remediated",
@@ -806,7 +1046,7 @@ export function createMockDashboardSummary(): DashboardSummary {
 export function createMockProjectDataset(projectId = "legacycart"): ProjectDataset {
   return {
     projectId,
-    projectName: "Retail commerce modernization assessment",
+    projectName: "LegacyCart migration assessment",
     clientName: "Northwind Retail Group",
     dashboard: createMockDashboardSummary(),
     overview: {
@@ -845,6 +1085,10 @@ export function createMockProjectDataset(projectId = "legacycart"): ProjectDatas
     factoryProposals,
     scenarioDiffs,
     evaluation,
+    intake,
+    mtcPipeline,
+    observability,
+    deploymentPlan,
     reportHighlights: [
       "Hardcoded credentials and leaked log data make immediate production movement unsafe.",
       "AWS is the recommended target because the workload benefits from strong IAM, managed database, and storage primitives.",
@@ -969,7 +1213,11 @@ export function buildProjectDatasetFromApi({
   sourceConnections,
   cloudConnections,
   factoryProposals,
-  chatMessages
+  chatMessages,
+  intake,
+  mtcPipeline,
+  observability,
+  deploymentPlan
 }: {
   projectId: string;
   dashboard: DashboardSummary;
@@ -994,6 +1242,10 @@ export function buildProjectDatasetFromApi({
   cloudConnections: CloudConnection[];
   factoryProposals: FactoryProposal[];
   chatMessages: ChatMessage[];
+  intake: IntakeProfile;
+  mtcPipeline: import("@contracts/index").PipelineSummary[];
+  observability: ObservabilityTrace[];
+  deploymentPlan: DeploymentPlan;
 }): ProjectDataset {
   const evidence = Array.from(
     new Map(findings.flatMap((finding) => finding.evidence).map((item) => [item.id, item])).values()
@@ -1135,7 +1387,25 @@ export function buildProjectDatasetFromApi({
     artifacts,
     approvals,
     auditEvents,
-    chat: chatMessages,
+    chat:
+      chatMessages.length > 0
+        ? chatMessages
+        : [
+            {
+              id: "chat-001",
+              author: "Mia Chen",
+              role: "human",
+              createdAt: assessment.completedAt,
+              content: "What is the safest path if the client wants early momentum but cannot accept an unsafe cutover?"
+            },
+            {
+              id: "chat-002",
+              author: "Cockpit Assistant",
+              role: "ai",
+              createdAt: assessment.completedAt,
+              content: `${providers[0]?.name ?? "AWS"} with a security-first wave is the safest recommendation. ${finalRecommendation.nextSteps[0] ?? "Remediate the highest-risk blockers first."}`
+            }
+          ],
     connectors,
     sourceConnections,
     cloudConnections,
@@ -1143,6 +1413,10 @@ export function buildProjectDatasetFromApi({
     agentRuns,
     evalRuns,
     factoryProposals,
+    intake,
+    mtcPipeline,
+    observability,
+    deploymentPlan,
     evaluation,
     reportHighlights: reports.slice(0, 3).map((report) => report.summary),
     exportFormats: Array.from(new Set(artifacts.map((artifact) => artifact.format.toUpperCase()))),

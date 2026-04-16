@@ -10,7 +10,7 @@ import type {
   ScenarioDiff
 } from "@contracts/index";
 import { Badge, Card, MetricCard, PillList } from "@/components/ui";
-import type { ConnectorItem, EvalSummary, ProjectDataset } from "@/lib/mock-data";
+import type { ConnectorItem, EvalSummary, ProjectDataset } from "@/lib/project-dataset";
 import { formatConfidence, formatDateTime, formatPercent } from "@/lib/format";
 
 export function ExecutiveRibbon({

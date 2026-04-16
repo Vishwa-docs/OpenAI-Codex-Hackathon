@@ -1,4 +1,5 @@
 import type {
+  AnalysisQuestion,
   ApprovalRecord,
   AgentRun,
   AssessmentRun,
@@ -10,10 +11,15 @@ import type {
   DependencyEdge,
   DependencyGraph,
   DependencyNode,
+  DeploymentPlan,
   EvalRun,
   EvidenceReference,
   FactoryProposal,
   Finding,
+  IntakeProfile,
+  ObservabilityTrace,
+  PipelineSummary,
+  PreviewDeploymentStatus,
   ProjectOverview,
   ProviderOption,
   Recommendation,
@@ -81,8 +87,14 @@ export interface ProjectDataset {
   assessmentRuns: AssessmentRun[];
   agentRuns: AgentRun[];
   evalRuns: EvalRun[];
+  intake: IntakeProfile;
+  mtcPipeline: PipelineSummary[];
+  observability: ObservabilityTrace[];
+  deploymentPlan: DeploymentPlan;
   factoryProposals: FactoryProposal[];
   scenarioDiffs: ScenarioDiff[];
+  analysisQuestions: AnalysisQuestion[];
+  previewStatus: PreviewDeploymentStatus;
   evaluation: EvalSummary;
   reportHighlights: string[];
   exportFormats: string[];
@@ -143,6 +155,12 @@ export function buildProjectDatasetFromApi({
   cloudConnections,
   factoryProposals,
   chatMessages,
+  intake,
+  mtcPipeline,
+  observability,
+  deploymentPlan,
+  analysisQuestions,
+  previewStatus,
 }: {
   projectId: string;
   dashboard: DashboardSummary;
@@ -167,11 +185,21 @@ export function buildProjectDatasetFromApi({
   cloudConnections: CloudConnection[];
   factoryProposals: FactoryProposal[];
   chatMessages: ChatMessage[];
+  intake: IntakeProfile;
+  mtcPipeline: PipelineSummary[];
+  observability: ObservabilityTrace[];
+  deploymentPlan: DeploymentPlan;
+  analysisQuestions: AnalysisQuestion[];
+  previewStatus: PreviewDeploymentStatus;
 }): ProjectDataset {
   const evidence = Array.from(
-    new Map(findings.flatMap((finding) => finding.evidence).map((item) => [item.id, item])).values()
+    new Map(findings.flatMap((finding) => finding.evidence).map((item) => [item.id, item])).values(),
   );
   const finalRecommendation = assessment.finalRecommendation;
+  const primarySource = sourceConnections[0];
+  const primaryAuditActor = auditEvents[0]?.actor ?? "Judge Workspace";
+  const primaryProvider = providers[0]?.name ?? overview.recommendedProvider ?? "Pending";
+
   const recommendations: Recommendation[] = [
     {
       id: `rec-${finalRecommendation.decision}`,
@@ -183,21 +211,16 @@ export function buildProjectDatasetFromApi({
       impact: "high",
       evidence: finalRecommendation.evidence,
     },
-    ...findings.slice(0, 2).map((finding, index) => {
-      const effort: Recommendation["effort"] = index === 0 ? "small" : "medium";
-      const impact: Recommendation["impact"] = finding.severity === "critical" ? "high" : "medium";
-
-      return {
-        id: `derived-${index + 1}`,
-        title: finding.recommendation,
-        summary: finding.summary,
-        confidence: finding.confidence,
-        rationale: `Derived from ${finding.title.toLowerCase()} and kept linked to the same evidence trail.`,
-        effort,
-        impact,
-        evidence: finding.evidence,
-      };
-    }),
+    ...findings.slice(0, 2).map((finding, index) => ({
+      id: `derived-${index + 1}`,
+      title: finding.recommendation,
+      summary: finding.summary,
+      confidence: finding.confidence,
+      rationale: `Derived from ${finding.title.toLowerCase()} and kept linked to the same evidence trail.`,
+      effort: (index === 0 ? "small" : "medium") as Recommendation["effort"],
+      impact: (finding.severity === "critical" ? "high" : "medium") as Recommendation["impact"],
+      evidence: finding.evidence,
+    })),
   ];
 
   const latestEvalRun = evalRuns[0];
@@ -207,28 +230,19 @@ export function buildProjectDatasetFromApi({
       score: metric.score,
       note: metric.summary,
     })) ??
-    assessment.agentOutputs
-      .filter((agent) => ["citation_evidence_critic", "safety_critic"].includes(agent.agentKey))
-      .map((agent) => ({
-        name: agent.displayName,
-        score: Math.round(agent.confidence * 100),
-        note: agent.summary,
-      }));
+    assessment.agentOutputs.map((agent) => ({
+      name: agent.displayName,
+      score: Math.round(agent.confidence * 100),
+      note: agent.summary,
+    }));
 
   const evaluation = {
     overallScore:
       latestEvalRun?.overallScore ??
       (evaluationChecks.length > 0
         ? Math.round(evaluationChecks.reduce((sum, item) => sum + item.score, 0) / evaluationChecks.length)
-        : Math.round(assessment.finalRecommendation.confidence * 100)),
-    checks: [
-      ...evaluationChecks,
-      {
-        name: "Recommendation consistency",
-        score: Math.round(assessment.finalRecommendation.confidence * 100),
-        note: "The final recommendation is assembled after specialist-agent synthesis and critic review.",
-      },
-    ],
+        : Math.round(finalRecommendation.confidence * 100)),
+    checks: evaluationChecks,
   };
 
   const connectors = [
@@ -237,7 +251,7 @@ export function buildProjectDatasetFromApi({
       name: connection.name,
       kind: "source" as const,
       status: connection.status === "disabled" ? ("disabled" as const) : connection.status,
-      details: `${connection.target} · ${connection.notes.join(" ")}`,
+      details: `${connection.target}${connection.notes.length > 0 ? ` · ${connection.notes.join(" ")}` : ""}`,
       lastSyncAt: connection.lastSyncAt,
     })),
     ...cloudConnections.map((connection) => ({
@@ -245,7 +259,7 @@ export function buildProjectDatasetFromApi({
       name: connection.name,
       kind: "cloud" as const,
       status: connection.status === "disabled" ? ("disabled" as const) : connection.status,
-      details: `${connection.accountLabel} · ${connection.notes.join(" ")}`,
+      details: `${connection.accountLabel}${connection.notes.length > 0 ? ` · ${connection.notes.join(" ")}` : ""}`,
       lastSyncAt: undefined,
     })),
     ...factoryProposals.map((proposal) => ({
@@ -276,6 +290,32 @@ export function buildProjectDatasetFromApi({
     })),
   ];
 
+  const currentMonthlyRunRate = Math.round(costRoi.annualBaselineCost / 12);
+  const targetMonthlyRunRate = Math.round(costRoi.annualTargetCost / 12);
+  const driverBreakdown = [
+    { label: "Application hosting", current: Math.round(currentMonthlyRunRate * 0.36), target: Math.round(targetMonthlyRunRate * 0.34) },
+    { label: "Data platform", current: Math.round(currentMonthlyRunRate * 0.28), target: Math.round(targetMonthlyRunRate * 0.3) },
+    { label: "Storage and transfer", current: Math.round(currentMonthlyRunRate * 0.16), target: Math.round(targetMonthlyRunRate * 0.14) },
+    { label: "Operations overhead", current: Math.round(currentMonthlyRunRate * 0.2), target: Math.round(targetMonthlyRunRate * 0.22) },
+  ];
+
+  const roadmapWaves =
+    scenarios.length > 0
+      ? scenarios.slice(0, 3).map((scenario, index) => ({
+          name: `Wave ${index} - ${scenario.name}`,
+          description: scenario.description,
+          duration: index === 0 ? "1-2 weeks" : index === 1 ? "2-4 weeks" : "2-3 weeks",
+          exitCriteria: scenario.assumptionSet,
+        }))
+      : [
+          {
+            name: "Wave 0 - Intake",
+            description: "Complete discovery, answer open questions, and validate the first migration plan.",
+            duration: "1 week",
+            exitCriteria: finalRecommendation.nextSteps.slice(0, 3),
+          },
+        ];
+
   return {
     projectId,
     projectName: overview.name,
@@ -288,12 +328,14 @@ export function buildProjectDatasetFromApi({
       phase: overview.phase,
       status: overview.status,
       recommendedProvider: overview.recommendedProvider,
-      owner: "Mia Chen",
-      lastScanAt: assessment.completedAt,
-      sourceSystem: "demo-systems/legacycart",
-      targetSystem: `${providers[0]?.name ?? "AWS"} landing zone with phased modernization`,
+      owner: primaryAuditActor,
+      lastScanAt: primarySource?.lastSyncAt ?? assessment.completedAt,
+      sourceSystem: primarySource?.target ?? "Source not connected yet",
+      targetSystem: `${primaryProvider} target landing zone`,
       businessSummary:
-        "Legacy retail order and invoicing platform with cron-style jobs, shared file storage, and brittle external integrations.",
+        findings[0]?.summary ??
+        analysisQuestions[0]?.rationale ??
+        "The project is ready for evidence-backed analysis from the supplied source.",
       narrative: finalRecommendation.summary,
     },
     evidence,
@@ -315,23 +357,24 @@ export function buildProjectDatasetFromApi({
     assessmentRuns,
     agentRuns,
     evalRuns,
+    intake,
+    mtcPipeline,
+    observability,
+    deploymentPlan,
     factoryProposals,
+    analysisQuestions,
+    previewStatus,
     evaluation,
-    reportHighlights: reports.slice(0, 3).map((report) => report.summary),
+    reportHighlights: (reports.length > 0 ? reports : recommendations).slice(0, 3).map((item) => item.summary),
     exportFormats: Array.from(new Set(artifacts.map((artifact) => artifact.format.toUpperCase()))),
     costModel: {
-      currentMonthlyRunRate: Math.round(costRoi.annualBaselineCost / 12),
-      targetMonthlyRunRate: Math.round(costRoi.annualTargetCost / 12),
+      currentMonthlyRunRate,
+      targetMonthlyRunRate,
       migrationOneTimeCost: costRoi.migrationInvestment,
       estimatedPaybackMonths: costRoi.paybackMonths,
       roiPercent: costRoi.roiPercent,
       assumptions: costRoi.assumptions,
-      driverBreakdown: [
-        { label: "Compute & app hosting", current: 18000, target: 13200 },
-        { label: "Database & backups", current: 14500, target: 9800 },
-        { label: "Storage & transfer", current: 7800, target: 4300 },
-        { label: "Operations overhead", current: 11600, target: 5700 },
-      ],
+      driverBreakdown,
     },
     riskModel: {
       overallRisk: `${riskCompliance.overallRisk[0].toUpperCase()}${riskCompliance.overallRisk.slice(1)} until blockers are remediated`,
@@ -345,44 +388,12 @@ export function buildProjectDatasetFromApi({
       rto: "2 hours for order intake",
     },
     roadmap: {
-      waves: [
-        {
-          name: "Wave 0 - Remediation",
-          description: "Close exposed secrets, logging, and transport blockers before migration approvals move forward.",
-          duration: "1-2 weeks",
-          exitCriteria: finalRecommendation.blockers.slice(0, 3),
-        },
-        {
-          name: "Wave 1 - Foundation",
-          description: "Establish the landing zone, platform guardrails, and first cloud-ready application boundary.",
-          duration: "2-4 weeks",
-          exitCriteria: [
-            "Source and cloud connectors validated",
-            "Approval-gated CI/CD path ready",
-            "Target architecture and network posture agreed",
-          ],
-        },
-        {
-          name: "Wave 2 - Migration",
-          description: "Move the first migration wave with rollback, restore, and evidence-linked change control.",
-          duration: "2-3 weeks",
-          exitCriteria: [
-            "Cutover runbook approved",
-            "Rollback tested",
-            "Operations and monitoring checklist accepted",
-          ],
-        },
-      ],
-      cutover: [
-        "Freeze writes and capture a verified source snapshot.",
-        "Run the approved migration wave and validate record counts.",
-        "Switch the workload and monitor the first production window closely.",
-      ],
-      rollback: [
-        "Retain the source system in a recoverable standby posture.",
-        "Preserve reversible network and deployment changes.",
-        "Use the approved rollback checklist if validation gates fail.",
-      ],
+      waves: roadmapWaves,
+      cutover: finalRecommendation.nextSteps.slice(0, 3),
+      rollback:
+        finalRecommendation.blockers.length > 0
+          ? finalRecommendation.blockers.slice(0, 3)
+          : ["Preserve the current source in a recoverable state until the preview passes health checks."],
     },
   };
 }

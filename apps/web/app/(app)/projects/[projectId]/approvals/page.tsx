@@ -1,4 +1,5 @@
-import { ApprovalCards, BulletList } from "@/components/section-page";
+import { ApprovalActionCards } from "@/components/approval-action-cards";
+import { BulletList } from "@/components/section-page";
 import { Card, SectionHeader } from "@/components/ui";
 import { loadProjectDataset } from "@/lib/app-api";
 
@@ -17,7 +18,7 @@ export default async function ApprovalsPage({
         title="Human-in-the-loop control points"
         description="Planning and execution remain gated. Proposed tools and connectors stay disabled until they are explicitly approved."
       />
-      <ApprovalCards approvals={project.approvals} />
+      <ApprovalActionCards projectId={project.projectId} approvals={project.approvals} />
       <Card className="space-y-4">
         <h2 className="text-lg font-medium text-white">Proposed factory entries</h2>
         <BulletList

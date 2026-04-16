@@ -8,7 +8,11 @@ client = TestClient(app)
 def test_healthcheck_and_overview_routes() -> None:
     health = client.get("/api/v1/health")
     assert health.status_code == 200
-    assert health.json()["status"] == "ok"
+    health_payload = health.json()
+    assert health_payload["status"] == "ok"
+    assert health_payload["appMode"] in {"demo", "judge"}
+    assert health_payload["defaultWorkspaceId"].startswith("workspace-")
+    assert health_payload["desktopDownloadUrl"].endswith(".zip")
 
     overview = client.get("/api/v1/projects/legacycart/overview")
     assert overview.status_code == 200

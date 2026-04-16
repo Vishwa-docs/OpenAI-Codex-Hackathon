@@ -23,6 +23,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--api-port", type=int, default=8000, help="Port for the FastAPI control plane.")
     parser.add_argument("--worker-port", type=int, default=8001, help="Port for the worker service.")
     parser.add_argument("--web-port", type=int, default=3000, help="Port for the Next.js app.")
+    parser.add_argument("--app-mode", choices=("demo", "judge"), default=os.environ.get("APP_MODE", "demo"))
+    parser.add_argument("--reload", action=argparse.BooleanOptionalAction, default=True, help="Enable hot reload for the API and worker.")
     return parser
 
 
@@ -51,7 +53,14 @@ def select_python() -> str:
     return str(Path(sys.executable))
 
 
-def spawn_processes(api_port: int, worker_port: int, web_port: int) -> list[tuple[str, subprocess.Popen]]:
+def spawn_processes(
+    api_port: int,
+    worker_port: int,
+    web_port: int,
+    *,
+    app_mode: str,
+    reload_enabled: bool,
+) -> list[tuple[str, subprocess.Popen]]:
     processes: list[tuple[str, subprocess.Popen]] = []
     UV_CACHE_DIR.mkdir(exist_ok=True)
     python_bin = select_python()
@@ -59,54 +68,46 @@ def spawn_processes(api_port: int, worker_port: int, web_port: int) -> list[tupl
     api_env = os.environ.copy()
     api_env.setdefault("PYTHONUNBUFFERED", "1")
     api_env["UV_CACHE_DIR"] = str(UV_CACHE_DIR)
-    processes.append(
-        (
-            "api",
-            subprocess.Popen(
-                [
-                    python_bin,
-                    "-m",
-                    "uvicorn",
-                    "services.api.app.main:app",
-                    "--reload",
-                    "--host",
-                    "127.0.0.1",
-                    "--port",
-                    str(api_port),
-                ],
-                cwd=ROOT,
-                env=api_env,
-            ),
-        )
-    )
+    api_env["APP_MODE"] = app_mode
+    api_command = [
+        python_bin,
+        "-m",
+        "uvicorn",
+        "services.api.app.main:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(api_port),
+    ]
+    if reload_enabled:
+        api_command.insert(4, "--reload")
+    processes.append(("api", subprocess.Popen(api_command, cwd=ROOT, env=api_env)))
 
     worker_env = os.environ.copy()
     worker_env.setdefault("PYTHONUNBUFFERED", "1")
     worker_env["UV_CACHE_DIR"] = str(UV_CACHE_DIR)
-    processes.append(
-        (
-            "worker",
-            subprocess.Popen(
-                [
-                    python_bin,
-                    "-m",
-                    "uvicorn",
-                    "services.worker.app.main:app",
-                    "--reload",
-                    "--host",
-                    "127.0.0.1",
-                    "--port",
-                    str(worker_port),
-                ],
-                cwd=ROOT,
-                env=worker_env,
-            ),
-        )
-    )
+    worker_env["APP_MODE"] = app_mode
+    worker_command = [
+        python_bin,
+        "-m",
+        "uvicorn",
+        "services.worker.app.main:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(worker_port),
+    ]
+    if reload_enabled:
+        worker_command.insert(4, "--reload")
+    processes.append(("worker", subprocess.Popen(worker_command, cwd=ROOT, env=worker_env)))
 
     web_env = os.environ.copy()
+    web_env["APP_MODE"] = app_mode
+    web_env["NEXT_PUBLIC_APP_MODE"] = app_mode
+    web_env["NEXT_PUBLIC_DEFAULT_WORKSPACE_ID"] = "workspace-judge" if app_mode == "judge" else "workspace-demo"
     web_env["NEXT_PUBLIC_API_BASE_URL"] = f"http://127.0.0.1:{api_port}/api/v1"
     web_env["NEXT_PUBLIC_WORKER_BASE_URL"] = f"http://127.0.0.1:{worker_port}"
+    web_env["NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL"] = "/downloads/cloud-migration-cockpit-judge-macos.zip"
     web_env["PORT"] = str(web_port)
     processes.append(
         (
@@ -139,7 +140,13 @@ def main(argv: list[str] | None = None) -> int:
     if not args.skip_infra:
         start_infra()
 
-    processes = spawn_processes(args.api_port, args.worker_port, args.web_port)
+    processes = spawn_processes(
+        args.api_port,
+        args.worker_port,
+        args.web_port,
+        app_mode=args.app_mode,
+        reload_enabled=args.reload,
+    )
     print(
         "\n".join(
             [

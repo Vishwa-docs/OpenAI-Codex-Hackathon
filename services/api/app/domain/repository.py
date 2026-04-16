@@ -6,7 +6,9 @@ from pathlib import Path
 from re import sub
 
 from ..core.db import ProjectSnapshotRecord, session_scope
+from ..core.settings import get_settings
 from .models import (
+    AnalysisQuestion,
     AssessmentRun,
     ClientAccountSummary,
     DeploymentArtifact,
@@ -32,6 +34,8 @@ from .models import (
     ProjectOverview,
     ProjectCreate,
     ProjectSeed,
+    PreviewDeploymentStatus,
+    RuntimeDescriptor,
     SourceConnection,
     RegistryEntry,
     Report,
@@ -42,6 +46,7 @@ from .models import (
     ChatMessageCreate,
     WorkspaceContext,
     WorkspaceSummary,
+    normalize_source_kind,
 )
 from services.worker.app.scanner import scan_legacycart
 
@@ -50,6 +55,7 @@ class SeedRepository:
     """In-memory repository with a deterministic seeded legacy migration project."""
 
     def __init__(self) -> None:
+        self.settings = get_settings()
         self._projects = self._load_projects()
 
     def _load_projects(self) -> dict[str, ProjectSeed]:
@@ -61,14 +67,17 @@ class SeedRepository:
                     for record in records
                 }
 
-            seed = self._build_legacycart()
-            session.merge(
-                ProjectSnapshotRecord(
-                    project_id=seed.overview.id,
-                    payload_json=seed.model_dump_json(by_alias=True),
+            if self.settings.should_seed_demo_data:
+                seed = self._build_legacycart()
+                session.merge(
+                    ProjectSnapshotRecord(
+                        project_id=seed.overview.id,
+                        payload_json=seed.model_dump_json(by_alias=True),
+                    )
                 )
-            )
-            return {seed.overview.id: seed}
+                return {seed.overview.id: seed}
+
+            return {}
 
     def _save_project(self, project: ProjectSeed) -> None:
         with session_scope() as session:
@@ -79,6 +88,10 @@ class SeedRepository:
                 )
             )
 
+    def save_project(self, project: ProjectSeed) -> None:
+        self._projects[project.overview.id] = project
+        self._save_project(project)
+
     def get_project(self, project_id: str) -> ProjectSeed:
         if project_id not in self._projects:
             raise KeyError(project_id)
@@ -88,38 +101,58 @@ class SeedRepository:
         return [project.overview for project in self._projects.values()]
 
     def get_workspace_context(self, workspace_id: str) -> WorkspaceContext:
-        if workspace_id != "workspace-demo":
+        if workspace_id != self.settings.default_workspace_id:
             raise KeyError(workspace_id)
         projects = self.list_projects()
-        return WorkspaceContext(
-            organization=OrganizationSummary(id="org-demo", name="Cloud Migration Cockpit Demo Org", slug="demo-org", mode="demo"),
-            workspace=WorkspaceSummary(
-                id="workspace-demo",
-                organization_id="org-demo",
-                name="Demo Workspace",
-                slug="demo-workspace",
-                mode="demo",
-                project_count=len(projects),
-            ),
-            client_accounts=[
+        legacy_project = self._projects.get("legacycart")
+        client_accounts = (
+            [
                 ClientAccountSummary(
                     id="client-demo-northstar",
-                    workspace_id="workspace-demo",
-                    name=self.get_project("legacycart").overview.client_name,
+                    workspace_id=self.settings.default_workspace_id,
+                    name=legacy_project.overview.client_name,
                     industry="Retail",
                     primary_region="us-east-1",
                     compliance_tags=["PCI-lite", "Customer PII"],
                 )
-            ],
+            ]
+            if legacy_project is not None and self.settings.is_demo_mode
+            else []
+        )
+        return WorkspaceContext(
+            organization=OrganizationSummary(
+                id=self.settings.default_organization_id,
+                name="Cloud Migration Cockpit Judge Org" if self.settings.is_judge_mode else "Cloud Migration Cockpit Demo Org",
+                slug="judge-org" if self.settings.is_judge_mode else "demo-org",
+                mode="judge" if self.settings.is_judge_mode else "demo",
+            ),
+            workspace=WorkspaceSummary(
+                id=self.settings.default_workspace_id,
+                organization_id=self.settings.default_organization_id,
+                name="Judge Workspace" if self.settings.is_judge_mode else "Demo Workspace",
+                slug="judge-workspace" if self.settings.is_judge_mode else "demo-workspace",
+                mode="judge" if self.settings.is_judge_mode else "demo",
+                project_count=len(projects),
+            ),
+            client_accounts=client_accounts,
             projects=projects,
+            runtime=RuntimeDescriptor(
+                app_mode="judge" if self.settings.is_judge_mode else "demo",
+                default_workspace_id=self.settings.default_workspace_id,
+                desktop_download_url=self.settings.desktop_download_url,
+                desktop_available=self.settings.desktop_build_path.exists(),
+                version="0.1.0",
+            ),
         )
 
     def list_workspace_projects(self, workspace_id: str) -> list[ProjectOverview]:
         return self.get_workspace_context(workspace_id).projects
 
     def create_workspace_project(self, workspace_id: str, draft: ProjectCreate) -> ProjectOverview:
-        if workspace_id != "workspace-demo":
+        if workspace_id != self.settings.default_workspace_id:
             raise KeyError(workspace_id)
+        if draft.source_kind and draft.source_target:
+            return self.create_project(draft).overview
         project_id = sub(r"[^a-z0-9]+", "-", draft.name.lower()).strip("-") or f"project-{len(self._projects) + 1}"
         if project_id in self._projects:
             project_id = f"{project_id}-{len(self._projects) + 1}"
@@ -164,7 +197,7 @@ class SeedRepository:
                     entity_type="migration_project",
                     entity_id=project_id,
                     created_at=now,
-                    metadata={"workspaceId": workspace_id, "mode": "demo"},
+                    metadata={"workspaceId": workspace_id, "mode": self.settings.app_mode},
                 )
             ],
             registry_entries=[],
@@ -182,28 +215,54 @@ class SeedRepository:
     def create_project(self, draft: ProjectCreate) -> ProjectSeed:
         slug = sub(r"[^a-z0-9]+", "-", draft.name.lower()).strip("-") or f"project-{len(self._projects) + 1}"
         project_id = slug if slug not in self._projects else f"{slug}-{len(self._projects) + 1}"
-        base = self.get_project("legacycart").model_copy(deep=True)
         now = datetime(2026, 4, 16, 12, 0, tzinfo=UTC)
+        source_kind = normalize_source_kind(draft.source_kind or "local_path")
+        source_target = draft.source_target or ""
+        expected_users = draft.expected_users or 25
+        credential_kind = draft.credential_kind or "none"
+        credential_label = draft.credential_label or ("Local path" if source_kind == "local_path" else "Source credential")
 
         try:
             scan_result = (
-                scan_legacycart(Path(draft.source_target))
-                if draft.source_kind == "local_directory" and Path(draft.source_target).exists()
+                scan_legacycart(Path(source_target))
+                if source_kind == "local_path" and source_target and Path(source_target).exists()
                 else None
             )
         except Exception:
             scan_result = None
 
         founder_summary = (
-            f"This project is being assessed for about {draft.expected_users} users. "
+            f"This project is being assessed for about {expected_users} users. "
             "The cockpit will favor simpler hosting first and only suggest heavier cloud patterns when the code or traffic justifies it."
         )
+
+        if scan_result is not None:
+            project = self._build_project_from_scan(
+                project_id=project_id,
+                draft=draft,
+                source_kind=source_kind,
+                source_target=source_target,
+                credential_kind=credential_kind,
+                credential_label=credential_label,
+                founder_summary=founder_summary,
+                now=now,
+                scan_result=scan_result,
+            )
+            self._projects[project_id] = project
+            self._save_project(project)
+            return project
+
+        if self.settings.should_seed_demo_data and "legacycart" in self._projects:
+            base = self.get_project("legacycart").model_copy(deep=True)
+        else:
+            base = self._build_empty_project_seed(project_id, draft, founder_summary, now)
+
         base.overview = base.overview.model_copy(
             update={
                 "id": project_id,
                 "name": draft.name,
                 "client_name": draft.client_name,
-                "readiness_score": scan_result.summary.readiness_score if scan_result else min(80, max(35, 72 - draft.expected_users // 12)),
+                "readiness_score": min(80, max(35, 72 - expected_users // 12)),
                 "migration_decision": "Assessing real codebase and migration options",
                 "phase": "intake",
                 "status": "intake_ready",
@@ -213,18 +272,18 @@ class SeedRepository:
         base.source_connections = [
             SourceConnection(
                 id=f"{project_id}-source-1",
-                kind=draft.source_kind,
+                kind=source_kind,
                 name="Primary source",
-                status="connected" if draft.source_kind == "local_directory" else "needs_attention",
-                mode="discovery" if draft.source_kind != "local_directory" else "read_only",
-                target=draft.source_target,
-                branch="main" if draft.source_kind != "local_directory" else None,
-                last_sync_at=now if draft.source_kind == "local_directory" else None,
+                status="connected" if source_kind == "local_path" else "needs_attention",
+                mode="discovery" if source_kind != "local_path" else "read_only",
+                target=source_target,
+                branch="main" if source_kind != "local_path" else None,
+                last_sync_at=now if source_kind == "local_path" else None,
                 credential_ref=CredentialRef(
                     id=f"{project_id}-source-cred",
-                    kind=draft.credential_kind,
-                    label=draft.credential_label,
-                    redacted_value=f"{draft.credential_kind}_****",
+                    kind=credential_kind,
+                    label=credential_label,
+                    redacted_value=f"{credential_kind}_****",
                 ),
                 notes=[
                     "Created from the desktop intake wizard.",
@@ -287,22 +346,305 @@ class SeedRepository:
             project_id=project_id,
             name=draft.name,
             client_name=draft.client_name,
-            source_kind=draft.source_kind,
-            source_target=draft.source_target,
-            expected_users=draft.expected_users,
+            source_kind=source_kind,
+            source_target=source_target,
+            expected_users=expected_users,
             preferred_cloud=draft.preferred_cloud,
             business_constraints=draft.business_constraints,
             compliance_notes=draft.compliance_notes,
-            credential_label=draft.credential_label,
-            credential_kind=draft.credential_kind,
+            credential_label=credential_label,
+            credential_kind=credential_kind,
             founder_summary=founder_summary,
         )
-        base.deployment_plan = self._build_deployment_plan(project_id, draft.expected_users, draft.source_kind, False)
+        base.deployment_plan = self._build_deployment_plan(project_id, expected_users, source_kind, False)
         base.observability_traces = self._build_observability_traces(project_id)
         base.deployment_executions = []
+        base.analysis_questions = []
+        base.preview_status = self._build_preview_status(source_target, now)
         self._projects[project_id] = base
         self._save_project(base)
         return base
+
+    def _build_empty_project_seed(
+        self,
+        project_id: str,
+        draft: ProjectCreate,
+        founder_summary: str,
+        now: datetime,
+    ) -> ProjectSeed:
+        return ProjectSeed(
+            overview=ProjectOverview(
+                id=project_id,
+                name=draft.name,
+                client_name=draft.client_name,
+                readiness_score=0,
+                migration_decision="Intake in progress",
+                confidence=0.0,
+                phase="Intake",
+                status="Draft intake",
+                recommended_provider="Pending",
+            ),
+            evidence=[],
+            findings=[],
+            graph=DependencyGraph(nodes=[], edges=[], generated_at=now, summary="No source evidence has been ingested yet."),
+            source_connections=[],
+            cloud_connections=[],
+            factory_proposals=[],
+            chat_messages=[
+                ChatMessage(
+                    id=f"{project_id}-chat-001",
+                    role="system",
+                    author="Cloud Migration Cockpit",
+                    created_at=now,
+                    content=founder_summary,
+                )
+            ],
+            approvals=[
+                ApprovalRecord(id=f"{project_id}-approval-planning", phase="Planning Phase", state="pending", requested_by=draft.owner or "system"),
+                ApprovalRecord(id=f"{project_id}-approval-execution", phase="Execution Phase", state="not_required", requested_by="system"),
+            ],
+            audit_events=[
+                AuditEvent(
+                    id=f"{project_id}-audit-created",
+                    actor=draft.owner or "system",
+                    action="project.created",
+                    entity_type="migration_project",
+                    entity_id=project_id,
+                    created_at=now,
+                    metadata={"workspaceId": self.settings.default_workspace_id, "mode": self.settings.app_mode},
+                )
+            ],
+            registry_entries=[],
+            reports=[],
+            artifacts=[],
+            intake_profile=None,
+            deployment_plan=None,
+            observability_traces=[],
+            deployment_executions=[],
+            analysis_questions=[],
+            preview_status=self._build_preview_status(draft.source_target, now),
+        )
+
+    def _build_project_from_scan(
+        self,
+        *,
+        project_id: str,
+        draft: ProjectCreate,
+        source_kind: str,
+        source_target: str,
+        credential_kind: str,
+        credential_label: str,
+        founder_summary: str,
+        now: datetime,
+        scan_result,
+    ) -> ProjectSeed:
+        evidence_by_id = {
+            item.id: EvidenceReference(
+                id=item.id,
+                source_type=item.source_type,
+                source_uri=item.source_uri,
+                excerpt=item.excerpt,
+                locator=(
+                    EvidenceLocator(
+                        line_start=item.locator.get("lineStart"),
+                        line_end=item.locator.get("lineEnd"),
+                    )
+                    if item.locator
+                    else None
+                ),
+                confidence=item.confidence,
+            )
+            for item in scan_result.evidence
+        }
+        findings = [
+            Finding(
+                id=item.id,
+                title=item.title,
+                category=item.category,
+                severity=item.severity,
+                confidence=item.confidence,
+                summary=item.summary,
+                recommendation=item.recommendation,
+                evidence=[evidence_by_id[evidence_id] for evidence_id in item.evidence_ids if evidence_id in evidence_by_id],
+            )
+            for item in scan_result.findings
+        ]
+        nodes = []
+        for index, component in enumerate(scan_result.components):
+            kind = component.kind
+            if kind == "integration":
+                graph_kind = "external_api"
+            elif kind == "frontend":
+                graph_kind = "service"
+            else:
+                graph_kind = kind
+            nodes.append(
+                DependencyNode(
+                    id=component.id,
+                    label=component.name,
+                    kind=graph_kind,
+                    environment="legacy",
+                    status="observed",
+                    x=180 + (index % 3) * 220,
+                    y=160 + (index // 3) * 180,
+                )
+            )
+        edges = [
+            DependencyEdge(
+                id=item.id,
+                source=item.source,
+                target=item.target,
+                relation=item.relation,
+            )
+            for item in scan_result.dependencies
+        ]
+        preview_status = self._build_preview_status(source_target, now)
+        analysis_questions = self._build_analysis_questions(project_id, findings, now)
+        recommended_provider = scan_result.summary.provider_ranking[0]["provider"] if scan_result.summary.provider_ranking else draft.preferred_cloud.upper()
+        return ProjectSeed(
+            overview=ProjectOverview(
+                id=project_id,
+                name=draft.name,
+                client_name=draft.client_name,
+                readiness_score=scan_result.summary.readiness_score,
+                migration_decision=scan_result.summary.recommendation.title(),
+                confidence=scan_result.summary.confidence,
+                phase="analysis",
+                status="questions_pending" if analysis_questions else "analysis_ready",
+                recommended_provider=str(recommended_provider),
+            ),
+            evidence=list(evidence_by_id.values()),
+            findings=findings,
+            graph=DependencyGraph(
+                nodes=nodes,
+                edges=edges,
+                generated_at=now,
+                summary=f"Dependency graph built from {scan_result.root_path}.",
+            ),
+            source_connections=[
+                SourceConnection(
+                    id=f"{project_id}-source-1",
+                    kind=source_kind,
+                    name="Primary source",
+                    status="connected",
+                    mode="read_only",
+                    target=source_target,
+                    last_sync_at=now,
+                    credential_ref=CredentialRef(
+                        id=f"{project_id}-source-cred",
+                        kind=credential_kind,
+                        label=credential_label,
+                        redacted_value=f"{credential_kind}_****",
+                    ),
+                    notes=["Scanned from a real local path in judge mode."],
+                )
+            ],
+            cloud_connections=[],
+            factory_proposals=[],
+            chat_messages=[
+                ChatMessage(
+                    id=f"{project_id}-chat-001",
+                    role="system",
+                    author="Cloud Migration Cockpit",
+                    created_at=now,
+                    content=founder_summary,
+                )
+            ],
+            approvals=[
+                ApprovalRecord(id=f"{project_id}-approval-planning", phase="Planning Phase", state="pending", requested_by="system"),
+                ApprovalRecord(id=f"{project_id}-approval-execution", phase="Execution Phase", state="not_required", requested_by="system"),
+            ],
+            audit_events=[
+                AuditEvent(
+                    id=f"{project_id}-audit-created",
+                    actor="desktop-intake",
+                    action="project.created",
+                    entity_type="migration_project",
+                    entity_id=project_id,
+                    created_at=now,
+                    metadata={"sourceKind": source_kind, "workspaceId": self.settings.default_workspace_id},
+                ),
+                AuditEvent(
+                    id=f"{project_id}-audit-scan",
+                    actor="local-worker",
+                    action="source.scanned",
+                    entity_type="source_connection",
+                    entity_id=f"{project_id}-source-1",
+                    created_at=now,
+                    metadata={"sourceTarget": source_target, "evidenceCount": str(len(evidence_by_id))},
+                ),
+            ],
+            registry_entries=[],
+            reports=[],
+            artifacts=[],
+            intake_profile=IntakeProfile(
+                id=project_id,
+                project_id=project_id,
+                name=draft.name,
+                client_name=draft.client_name,
+                source_kind=source_kind,
+                source_target=source_target,
+                expected_users=draft.expected_users or 25,
+                preferred_cloud=draft.preferred_cloud,
+                business_constraints=draft.business_constraints,
+                compliance_notes=draft.compliance_notes,
+                credential_label=credential_label,
+                credential_kind=credential_kind,
+                founder_summary=founder_summary,
+            ),
+            deployment_plan=self._build_deployment_plan(project_id, draft.expected_users or 25, source_kind, False),
+            observability_traces=self._build_observability_traces(project_id),
+            deployment_executions=[],
+            analysis_questions=analysis_questions,
+            preview_status=preview_status,
+        )
+
+    def _build_analysis_questions(
+        self,
+        project_id: str,
+        findings: list[Finding],
+        now: datetime,  # noqa: ARG002 - keeps call sites timestamp-ready for persisted follow-ups
+    ) -> list[AnalysisQuestion]:
+        questions: list[AnalysisQuestion] = []
+        if any(finding.category in {"secrets", "security", "logging"} for finding in findings):
+            questions.append(
+                AnalysisQuestion(
+                    id=f"{project_id}-question-security",
+                    stage="security_readiness",
+                    question="Which secrets manager and log retention policy should the migration target use?",
+                    rationale="The scan found credential or sensitive logging issues that must be closed before execution.",
+                )
+            )
+        if any(finding.category in {"integration", "operations", "delivery"} for finding in findings):
+            questions.append(
+                AnalysisQuestion(
+                    id=f"{project_id}-question-cutover",
+                    stage="migration_strategy",
+                    question="Which external integrations and batch jobs must remain unchanged in the first migration wave?",
+                    rationale="The scan found coupled jobs or external dependencies that influence the safest first wave.",
+                )
+            )
+        return questions
+
+    @staticmethod
+    def _build_preview_status(source_target: str | None, now: datetime) -> PreviewDeploymentStatus:
+        root = Path(source_target) if source_target else None
+        supported = bool(root and root.exists() and ((root / "package.json").exists() or (root / "pnpm-workspace.yaml").exists()))
+        if supported:
+            return PreviewDeploymentStatus(
+                status="ready",
+                supported=True,
+                summary="A Node-based local preview can be launched from the working copy after planning approval.",
+                workspace_path=str(root),
+                updated_at=now,
+            )
+        return PreviewDeploymentStatus(
+            status="unsupported",
+            supported=False,
+            summary="Local preview automation is currently limited to Node-based web app monorepos.",
+            workspace_path=str(root) if root else None,
+            updated_at=now,
+        )
 
     def get_intake_profile(self, project_id: str) -> IntakeProfile:
         project = self.get_project(project_id)
@@ -315,7 +657,7 @@ class SeedRepository:
         if project.deployment_plan is None:
             has_aws = any(item.provider == "aws" for item in project.cloud_connections)
             expected_users = project.intake_profile.expected_users if project.intake_profile else 250
-            project.deployment_plan = self._build_deployment_plan(project_id, expected_users, project.intake_profile.source_kind if project.intake_profile else "local_directory", has_aws)
+            project.deployment_plan = self._build_deployment_plan(project_id, expected_users, project.intake_profile.source_kind if project.intake_profile else "local_path", has_aws)
         return project.deployment_plan
 
     def list_observability_traces(self, project_id: str) -> list[ObservabilityTrace]:
@@ -389,7 +731,7 @@ class SeedRepository:
             project.deployment_plan = self._build_deployment_plan(
                 project_id,
                 project.intake_profile.expected_users if project.intake_profile else 250,
-                project.intake_profile.source_kind if project.intake_profile else "local_directory",
+                project.intake_profile.source_kind if project.intake_profile else "local_path",
                 True,
             )
         self._save_project(project)
@@ -461,7 +803,7 @@ class SeedRepository:
         project.deployment_plan = self._build_deployment_plan(
             project_id,
             project.intake_profile.expected_users if project.intake_profile else 250,
-            project.intake_profile.source_kind if project.intake_profile else "local_directory",
+            project.intake_profile.source_kind if project.intake_profile else "local_path",
             True,
             last_execution=execution,
         )
@@ -505,7 +847,7 @@ class SeedRepository:
             PlatformRecommendation(
                 platform_key="aws-ec2",
                 label="AWS EC2",
-                fit_score=92 if source_kind == "local_directory" and expected_users <= 500 else 78 if expected_users <= 500 else 76,
+                fit_score=92 if source_kind == "local_path" and expected_users <= 500 else 78 if expected_users <= 500 else 76,
                 best_for="Simple backends, early production hardening, and teams that want AWS control without microservices.",
                 rationale="Strong bridge option between a vibe-coded prototype and a production-ready AWS footprint.",
                 plain_language_rationale="A simple server on AWS is often the right first production step when managed microservices would be overkill.",

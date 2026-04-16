@@ -1,10 +1,10 @@
 import { Card, SectionHeader } from "@/components/ui";
-import { loadDashboardSummary } from "@/lib/app-api";
+import { DEFAULT_WORKSPACE_ID, loadWorkspaceProjects } from "@/lib/app-api";
 import { formatConfidence, formatPercent } from "@/lib/format";
 import Link from "next/link";
 
 export default async function ProjectsPage() {
-  const dashboard = await loadDashboardSummary();
+  const projects = await loadWorkspaceProjects(DEFAULT_WORKSPACE_ID);
 
   return (
     <div className="space-y-6">
@@ -21,8 +21,24 @@ export default async function ProjectsPage() {
           </Link>
         }
       />
-      <div className="grid gap-4 xl:grid-cols-3">
-        {dashboard.topProjects.map((project) => (
+      {projects.length === 0 ? (
+        <Card className="space-y-4">
+          <h2 className="text-lg font-medium text-white">No projects yet</h2>
+          <p className="text-sm leading-6 text-slate-300">
+            The judge workspace starts empty. Create a project from a real local path or repository URL to begin the agentic analysis.
+          </p>
+          <div>
+            <Link
+              href="/projects/new"
+              className="inline-flex rounded-full bg-sky-400 px-5 py-2.5 text-sm font-medium text-slate-950 transition hover:bg-sky-300"
+            >
+              Start the first analysis
+            </Link>
+          </div>
+        </Card>
+      ) : (
+        <div className="grid gap-4 xl:grid-cols-3">
+        {projects.map((project) => (
           <Link key={project.id} href={`/projects/${project.id}`}>
             <Card className="h-full space-y-4 transition hover:bg-white/[0.08]">
               <div className="flex items-start justify-between gap-4">
@@ -44,7 +60,8 @@ export default async function ProjectsPage() {
             </Card>
           </Link>
         ))}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

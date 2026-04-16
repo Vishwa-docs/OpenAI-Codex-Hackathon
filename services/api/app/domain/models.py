@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 def to_camel(value: str) -> str:
@@ -19,6 +19,7 @@ class ApiModel(BaseModel):
     )
 
 
+AppMode = Literal["demo", "judge"]
 Severity = Literal["critical", "high", "medium", "low"]
 ApprovalState = Literal["not_required", "pending", "approved", "rejected"]
 RunStatus = Literal["queued", "running", "succeeded", "failed"]
@@ -54,7 +55,16 @@ PipelineKey = Literal[
     "aws_execution",
     "post_deploy_validation",
 ]
-TenantMode = Literal["demo", "standard"]
+TenantMode = Literal["demo", "standard", "judge"]
+SourceKind = Literal["local_path", "github", "azure_repos"]
+QuestionState = Literal["pending", "answered"]
+PreviewStatus = Literal["idle", "ready", "running", "succeeded", "failed", "unsupported"]
+
+
+def normalize_source_kind(value: Any) -> Any:
+    if value == "local_directory":
+        return "local_path"
+    return value
 
 
 class EvidenceLocator(ApiModel):
@@ -194,6 +204,15 @@ class ApprovalDecision(ApiModel):
     comment: str
 
 
+class AnalysisQuestionAnswer(ApiModel):
+    actor: str
+    answer: str
+
+
+class PreviewLaunchRequest(ApiModel):
+    triggered_by: str = "judge-operator"
+
+
 class AuditEvent(ApiModel):
     id: str
     actor: str
@@ -226,7 +245,7 @@ class CredentialRef(ApiModel):
 
 class SourceConnection(ApiModel):
     id: str
-    kind: Literal["local_directory", "github", "azure_repos"]
+    kind: SourceKind
     name: str
     status: ConnectionStatus
     mode: Literal["read_only", "discovery", "approval_gated"]
@@ -236,9 +255,11 @@ class SourceConnection(ApiModel):
     credential_ref: CredentialRef
     notes: list[str]
 
+    _normalize_kind = field_validator("kind", mode="before")(normalize_source_kind)
+
 
 class SourceConnectionCreate(ApiModel):
-    kind: Literal["local_directory", "github", "azure_repos"]
+    kind: SourceKind
     name: str
     target: str
     branch: str | None = None
@@ -246,6 +267,8 @@ class SourceConnectionCreate(ApiModel):
     credential_label: str
     credential_kind: CredentialKind
     notes: list[str] = Field(default_factory=list)
+
+    _normalize_kind = field_validator("kind", mode="before")(normalize_source_kind)
 
 
 class CloudConnection(ApiModel):
@@ -312,7 +335,7 @@ class IntakeProfile(ApiModel):
     project_id: str
     name: str
     client_name: str
-    source_kind: Literal["local_directory", "github", "azure_repos"]
+    source_kind: SourceKind
     source_target: str
     expected_users: int
     preferred_cloud: Literal["aws", "gcp", "azure"] = "aws"
@@ -322,11 +345,13 @@ class IntakeProfile(ApiModel):
     credential_kind: CredentialKind
     founder_summary: str
 
+    _normalize_source_kind = field_validator("source_kind", mode="before")(normalize_source_kind)
+
 
 class ProjectCreate(ApiModel):
     name: str
     client_name: str
-    source_kind: Literal["local_directory", "github", "azure_repos"] | None = None
+    source_kind: SourceKind | None = None
     source_target: str | None = None
     expected_users: int | None = Field(default=None, ge=1)
     preferred_cloud: Literal["aws", "gcp", "azure"] = "aws"
@@ -340,6 +365,28 @@ class ProjectCreate(ApiModel):
     owner: str | None = None
     primary_region: str | None = None
     compliance_tags: list[str] = Field(default_factory=list)
+
+    _normalize_source_kind = field_validator("source_kind", mode="before")(normalize_source_kind)
+
+
+class AnalysisQuestion(ApiModel):
+    id: str
+    stage: PipelineKey
+    question: str
+    rationale: str
+    state: QuestionState = "pending"
+    answer: str | None = None
+
+
+class PreviewDeploymentStatus(ApiModel):
+    status: PreviewStatus
+    supported: bool
+    summary: str
+    url: str | None = None
+    health_summary: str | None = None
+    workspace_path: str | None = None
+    log_tail: list[str] = Field(default_factory=list)
+    updated_at: datetime
 
 
 class PlatformRecommendation(ApiModel):
@@ -492,11 +539,20 @@ class ClientAccountSummary(ApiModel):
     compliance_tags: list[str] = Field(default_factory=list)
 
 
+class RuntimeDescriptor(ApiModel):
+    app_mode: AppMode
+    default_workspace_id: str
+    desktop_download_url: str
+    desktop_available: bool
+    version: str
+
+
 class WorkspaceContext(ApiModel):
     organization: OrganizationSummary
     workspace: WorkspaceSummary
     client_accounts: list[ClientAccountSummary]
     projects: list[ProjectOverview]
+    runtime: RuntimeDescriptor
 
 
 class DashboardSummary(ApiModel):
@@ -607,6 +663,8 @@ class ProjectSeed(ApiModel):
     deployment_plan: DeploymentPlan | None = None
     observability_traces: list[ObservabilityTrace] = Field(default_factory=list)
     deployment_executions: list[DeploymentExecution] = Field(default_factory=list)
+    analysis_questions: list[AnalysisQuestion] = Field(default_factory=list)
+    preview_status: PreviewDeploymentStatus | None = None
 
 
 class AssessmentBundle(ApiModel):

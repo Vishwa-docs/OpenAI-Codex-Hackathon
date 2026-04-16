@@ -1,4 +1,5 @@
 import { Badge, SectionHeader } from "@/components/ui";
+import { getDesktopDownloadUrl } from "@/lib/runtime";
 import Link from "next/link";
 
 const productFrames = [
@@ -50,8 +51,8 @@ export default function ProductPage() {
         title="A public product story outside. A local AI workbench inside."
         description="Cloud Migration Cockpit is not just a scanner with nice charts. It is a product surface for buyers, a local runtime for AI work, and a dashboard for every meaningful interaction with the MTC pipeline."
         action={
-          <Link href="/projects/legacycart" className="rounded-full bg-sky-400 px-5 py-3 text-sm font-medium text-slate-950">
-            Open dashboard
+          <Link href={getDesktopDownloadUrl()} className="rounded-full bg-sky-400 px-5 py-3 text-sm font-medium text-slate-950">
+            Download macOS app
           </Link>
         }
       />

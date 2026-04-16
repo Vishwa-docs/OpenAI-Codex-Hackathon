@@ -6,6 +6,8 @@ from fastapi.responses import Response
 from ...dependencies import get_orchestrator, get_report_exporter
 from ...domain.models import (
     AgentRun,
+    AnalysisQuestion,
+    AnalysisQuestionAnswer,
     ApprovalRecord,
     ApprovalDecision,
     ArtifactFormat,
@@ -28,6 +30,8 @@ from ...domain.models import (
     ObservabilityTrace,
     ProjectCreate,
     ProjectOverview,
+    PreviewDeploymentStatus,
+    PreviewLaunchRequest,
     ProviderOption,
     RegistryEntry,
     Report,
@@ -324,6 +328,27 @@ def intake_profile(
     return _project_lookup(project_id, orchestrator.get_intake_profile)
 
 
+@project_router.get("/analysis-questions", response_model=list[AnalysisQuestion])
+def analysis_questions(
+    project_id: str,
+    orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
+) -> list[AnalysisQuestion]:
+    return _project_lookup(project_id, orchestrator.list_analysis_questions)
+
+
+@project_router.post("/analysis-questions/{question_id}/answer", response_model=AnalysisQuestion)
+def answer_analysis_question(
+    project_id: str,
+    question_id: str,
+    answer: AnalysisQuestionAnswer,
+    orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
+) -> AnalysisQuestion:
+    try:
+        return orchestrator.answer_analysis_question(project_id, question_id, answer)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown analysis question: {question_id}") from exc
+
+
 @project_router.get("/observability-traces", response_model=list[ObservabilityTrace])
 def observability_traces(
     project_id: str,
@@ -338,6 +363,28 @@ def deployment_plan(
     orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
 ) -> DeploymentPlan:
     return _project_lookup(project_id, orchestrator.get_deployment_plan)
+
+
+@project_router.get("/preview-status", response_model=PreviewDeploymentStatus)
+def preview_status(
+    project_id: str,
+    orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
+) -> PreviewDeploymentStatus:
+    return _project_lookup(project_id, orchestrator.get_preview_status)
+
+
+@project_router.post("/preview-status/launch", response_model=PreviewDeploymentStatus)
+def launch_preview(
+    project_id: str,
+    request: PreviewLaunchRequest,
+    orchestrator: AssessmentOrchestrator = Depends(get_orchestrator),
+) -> PreviewDeploymentStatus:
+    try:
+        return orchestrator.launch_local_preview(project_id, request)
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @project_router.post("/deployment-executions", response_model=DeploymentExecution, status_code=201)

@@ -5,6 +5,7 @@ from functools import lru_cache
 from .core.settings import get_settings
 from .domain.repository import SeedRepository
 from .services.chat import EvidenceGroundedChatService
+from .services.local_preview import LocalPreviewManager
 from .services.orchestration import AssessmentOrchestrator
 from .services.reporting import ReportExporter
 
@@ -16,7 +17,7 @@ def get_seed_repository() -> SeedRepository:
 
 @lru_cache
 def get_orchestrator() -> AssessmentOrchestrator:
-    return AssessmentOrchestrator(get_seed_repository(), get_chat_service())
+    return AssessmentOrchestrator(get_seed_repository(), get_chat_service(), get_local_preview_manager())
 
 
 @lru_cache
@@ -27,3 +28,8 @@ def get_report_exporter() -> ReportExporter:
 @lru_cache
 def get_chat_service() -> EvidenceGroundedChatService:
     return EvidenceGroundedChatService(get_settings())
+
+
+@lru_cache
+def get_local_preview_manager() -> LocalPreviewManager:
+    return LocalPreviewManager()

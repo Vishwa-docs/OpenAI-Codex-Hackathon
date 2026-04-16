@@ -586,7 +586,7 @@ const connectors: ConnectorItem[] = [
 const sourceConnections: SourceConnection[] = [
   {
     id: "source-local-legacycart",
-    kind: "local_directory",
+    kind: "local_path",
     name: "LegacyCart local directory",
     status: "connected",
     mode: "read_only",
@@ -664,12 +664,12 @@ const assessmentRuns: AssessmentRun[] = [
     completedAt: "2026-04-16T06:12:05Z",
     mode: "local_worker",
     pipelineSummaries: [
-      { pipelineKey: "intake_connections", title: "Intake + connections", status: "succeeded", summary: "Business inputs and source connectors normalized.", startedAt: "2026-04-16T06:11:00Z", completedAt: "2026-04-16T06:11:06Z" },
-      { pipelineKey: "evidence_ingestion", title: "Evidence ingestion", status: "succeeded", summary: "Files, logs, and manifests normalized into a typed dossier.", startedAt: "2026-04-16T06:11:06Z", completedAt: "2026-04-16T06:11:18Z" },
-      { pipelineKey: "assessment_swarm", title: "Assessment swarm", status: "succeeded", summary: "Specialist agents produced findings, provider fit, cost, and risk outputs.", startedAt: "2026-04-16T06:11:18Z", completedAt: "2026-04-16T06:11:40Z" },
-      { pipelineKey: "planning_artifacts", title: "Planning artifacts", status: "succeeded", summary: "Migration waves, diagram, and IaC starter artifacts generated.", startedAt: "2026-04-16T06:11:40Z", completedAt: "2026-04-16T06:11:48Z" },
-      { pipelineKey: "report_composition", title: "Report composition", status: "succeeded", summary: "Executive, technical, risk, and roadmap reports assembled.", startedAt: "2026-04-16T06:11:48Z", completedAt: "2026-04-16T06:11:58Z" },
-      { pipelineKey: "evals_governance", title: "Evals + governance", status: "succeeded", summary: "Critics scored evidence coverage, safety, and consistency before final output.", startedAt: "2026-04-16T06:11:58Z", completedAt: "2026-04-16T06:12:05Z" }
+      { pipelineKey: "intake_clarification", title: "Intake + connections", status: "succeeded", summary: "Business inputs and source connectors normalized.", startedAt: "2026-04-16T06:11:00Z", completedAt: "2026-04-16T06:11:06Z" },
+      { pipelineKey: "codebase_discovery", title: "Evidence ingestion", status: "succeeded", summary: "Files, logs, and manifests normalized into a typed dossier.", startedAt: "2026-04-16T06:11:06Z", completedAt: "2026-04-16T06:11:18Z" },
+      { pipelineKey: "architecture_analysis", title: "Assessment swarm", status: "succeeded", summary: "Specialist agents produced findings, provider fit, cost, and risk outputs.", startedAt: "2026-04-16T06:11:18Z", completedAt: "2026-04-16T06:11:40Z" },
+      { pipelineKey: "migration_strategy", title: "Planning artifacts", status: "succeeded", summary: "Migration waves, diagram, and IaC starter artifacts generated.", startedAt: "2026-04-16T06:11:40Z", completedAt: "2026-04-16T06:11:48Z" },
+      { pipelineKey: "deployment_readiness", title: "Report composition", status: "succeeded", summary: "Executive, technical, risk, and roadmap reports assembled.", startedAt: "2026-04-16T06:11:48Z", completedAt: "2026-04-16T06:11:58Z" },
+      { pipelineKey: "evaluation_critique", title: "Evals + governance", status: "succeeded", summary: "Critics scored evidence coverage, safety, and consistency before final output.", startedAt: "2026-04-16T06:11:58Z", completedAt: "2026-04-16T06:12:05Z" }
     ],
     agentOutputs: [],
     finalRecommendation: {
@@ -771,7 +771,7 @@ const intake: IntakeProfile = {
   projectId: "legacycart",
   name: "LegacyCart migration assessment",
   clientName: "Northwind Retail Group",
-  sourceKind: "local_directory",
+  sourceKind: "local_path",
   sourceTarget: "demo-systems/legacycart",
   expectedUsers: 25,
   preferredCloud: "aws",

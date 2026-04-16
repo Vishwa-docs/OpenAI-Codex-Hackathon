@@ -1,4 +1,6 @@
 ﻿import { Badge } from "@/components/ui";
+import { DEFAULT_WORKSPACE_ID, loadRuntimeHealth, loadWorkspaceContext } from "@/lib/app-api";
+import { getDesktopDownloadUrl } from "@/lib/runtime";
 import Link from "next/link";
 
 const operatingRails = [
@@ -21,9 +23,9 @@ const operatingRails = [
 ];
 
 const deliverables = [
-  "Runnable local control plane with web, API, worker, PostgreSQL, Redis, and MinIO",
-  "Marketing site and demo narrative that match the product's operator workflow",
-  "LegacyCart demo tenant with findings, scenarios, reports, artifacts, and approvals",
+  "Runnable local control plane with web, API, worker, and SQLite-backed persistence",
+  "Marketing site and judge workflow that match the product's operator experience",
+  "Empty intake workspace that starts from a real local path instead of a seeded project",
   "Agent Factory / Tool Factory proposals that stay disabled until approved"
 ];
 
@@ -59,18 +61,23 @@ const outcomes = [
   {
     label: "For demos",
     title: "Run a believable workflow in minutes.",
-    body: "Paste a GitHub repo, seed it with the bundled legacy app, and open the cockpit on a live-looking run state."
+    body: "Download the macOS app, paste a real local path, and open the cockpit on a live analysis state."
   }
 ];
 
 const proof = [
-  "Seeded legacy workload with real-looking blockers and dependency sprawl",
+  "Judge workspace starts empty and waits for a real local source path",
   "Hosted-style SaaS story plus operator cockpit in one Next.js app",
   "Local worker, API, approvals, reports, artifacts, and evaluation surfaces",
-  "Interactive demo flow that can simulate or perform a live GitHub branch push"
+  "Packaged macOS launcher that starts the local stack and opens the intake workflow"
 ];
 
-export default function MarketingHomePage() {
+export default async function MarketingHomePage() {
+  const [runtimeHealth, workspace] = await Promise.all([
+    loadRuntimeHealth().catch(() => null),
+    loadWorkspaceContext(DEFAULT_WORKSPACE_ID).catch(() => null),
+  ]);
+
   return (
     <main className="overflow-hidden pb-24">
       <section className="relative border-b border-white/10 px-6 pb-20 pt-16 lg:px-8 lg:pb-28 lg:pt-24">
@@ -90,16 +97,16 @@ export default function MarketingHomePage() {
 
             <div className="mt-10 flex flex-wrap gap-3">
               <Link
-                href="/demo"
+                href={getDesktopDownloadUrl()}
                 className="rounded-full bg-sky-400 px-6 py-3 text-sm font-medium text-slate-950 transition hover:bg-sky-300"
               >
-                Try interactive demo
+                Download macOS app
               </Link>
               <Link
-                href="/product"
+                href="/projects/new"
                 className="rounded-full border border-white/10 px-6 py-3 text-sm font-medium text-white transition hover:bg-white/[0.06]"
               >
-                See product story
+                Open intake workspace
               </Link>
             </div>
 
@@ -122,7 +129,7 @@ export default function MarketingHomePage() {
                 <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Demo speed</p>
                 <p className="mt-3 text-3xl font-semibold text-white">One workflow</p>
                 <p className="mt-2 text-sm leading-6 text-slate-300">
-                  Paste a repo, push the bundled seed project, and hand off into the cockpit without extra setup.
+                  Launch the packaged app, paste a real local project path, and hand off into the cockpit without demo scaffolding.
                 </p>
               </div>
             </div>
@@ -160,6 +167,29 @@ export default function MarketingHomePage() {
                     {item}
                   </p>
                 ))}
+              </div>
+              <div className="rounded-[1.6rem] border border-white/10 bg-slate-950/35 p-4">
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Runtime status</p>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <div>
+                    <p className="text-sm font-medium text-white">{runtimeHealth?.service ?? "Local runtime not started yet"}</p>
+                    <p className="mt-2 text-sm leading-6 text-slate-300">
+                      {runtimeHealth
+                        ? `Mode ${runtimeHealth.appMode} · version ${runtimeHealth.version} · workspace ${runtimeHealth.defaultWorkspaceId}`
+                        : "Launch the local stack or the desktop app to publish live runtime metadata here."}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-white">
+                      {runtimeHealth?.desktopAvailable ? "Desktop package ready" : "Desktop package needs a fresh build"}
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-slate-300">
+                      {workspace
+                        ? `${workspace.workspace.projectCount} active judge projects in the local workspace.`
+                        : "Workspace availability will appear here as soon as the control plane is reachable."}
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -202,12 +232,11 @@ export default function MarketingHomePage() {
             <div>
               <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Interactive demo</p>
               <h2 className="mt-4 text-4xl font-semibold text-white">
-                Use the bundled legacy workload to test the handoff into the real operator experience.
+                Use the packaged desktop app to move from download to a real local-path analysis.
               </h2>
               <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-300">
-                The demo page is intentionally operational. It accepts a GitHub repo URL, prepares the seeded LegacyCart
-                project, performs a live branch push when you provide a token, and then hands everything off to the
-                dashboard where the MTC pipeline becomes interactive.
+                The judge workflow is intentionally direct. Download the macOS app, launch the judge workspace, paste a
+                real local project path, and let the swarm produce questions, reports, approvals, and the local preview handoff.
               </p>
               <div className="mt-6 grid gap-3">
                 {deliverables.slice(0, 2).map((item) => (
@@ -219,16 +248,16 @@ export default function MarketingHomePage() {
             </div>
             <div className="flex flex-wrap gap-3 lg:justify-end">
               <Link
-                href="/demo"
+                href={getDesktopDownloadUrl()}
                 className="rounded-full bg-white px-6 py-3 text-sm font-medium text-slate-950 transition hover:bg-slate-200"
               >
-                Open demo page
+                Download launcher
               </Link>
               <Link
-                href="/projects/legacycart"
+                href="/projects/new"
                 className="rounded-full border border-white/10 px-6 py-3 text-sm font-medium text-white transition hover:bg-white/[0.06]"
               >
-                Preview cockpit
+                Open judge intake
               </Link>
             </div>
           </div>
@@ -237,5 +266,4 @@ export default function MarketingHomePage() {
     </main>
   );
 }
-
 

@@ -1,4 +1,5 @@
 import { Badge, Card, SectionHeader } from "@/components/ui";
+import { getDesktopDownloadUrl } from "@/lib/runtime";
 import Link from "next/link";
 
 const plans = [
@@ -30,8 +31,8 @@ export default function PricingPage() {
         title="Commercial framing for a product site, not a deployment checklist."
         description="The public pricing surface should describe how teams adopt the platform, while the actual AI runtime and MTC work happen after onboarding inside the dashboard."
         action={
-          <Link href="/demo" className="rounded-full border border-white/15 px-5 py-3 text-sm font-medium text-white">
-            Run interactive demo
+          <Link href={getDesktopDownloadUrl()} className="rounded-full border border-white/15 px-5 py-3 text-sm font-medium text-white">
+            Download macOS app
           </Link>
         }
       />

@@ -1,10 +1,12 @@
 import { cache } from "react";
+import { BackendUnavailableError } from "@/lib/app-errors";
 import {
   buildProjectDatasetFromApi,
   createMockDashboardSummary,
   createMockProjectDataset,
   type ProjectDataset
 } from "@/lib/mock-data";
+import { isJudgeMode } from "@/lib/runtime";
 import type {
   ApprovalRecord,
   AgentRun,
@@ -45,10 +47,16 @@ async function fetchJson<T>(path: string, timeoutMs = 1800): Promise<T> {
     });
 
     if (!response.ok) {
-      throw new Error(`Request failed with ${response.status}`);
+      throw new BackendUnavailableError(path, `Request failed with ${response.status}`);
     }
 
     return (await response.json()) as T;
+  } catch (error) {
+    if (error instanceof BackendUnavailableError) {
+      throw error;
+    }
+
+    throw new BackendUnavailableError(path);
   } finally {
     clearTimeout(timer);
   }
@@ -58,6 +66,9 @@ export const loadDashboardSummary = cache(async (): Promise<DashboardSummary> =>
   try {
     return await fetchJson<DashboardSummary>("/dashboard/summary");
   } catch {
+    if (isJudgeMode()) {
+      throw new Error("Dashboard summary is unavailable in judge mode.");
+    }
     return createMockDashboardSummary();
   }
 });
@@ -148,6 +159,9 @@ export const loadProjectDataset = cache(async (projectId: string): Promise<Proje
       deploymentPlan
     });
   } catch {
+    if (isJudgeMode()) {
+      throw new Error(`Project dataset is unavailable for ${projectId} in judge mode.`);
+    }
     return createMockProjectDataset(projectId);
   }
 });
@@ -159,3 +173,5 @@ export function getReportExportHref(
 ) {
   return `${API_BASE}/projects/${projectId}/reports/${reportId}/export?format=${format}`;
 }
+
+export { BackendUnavailableError };

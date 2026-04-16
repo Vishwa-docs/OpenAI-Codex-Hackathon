@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
 from ..domain.models import (
     AgentRun,
     AgentOutput,
+    AnalysisQuestion,
+    AnalysisQuestionAnswer,
     AssessmentBundle,
     AssessmentRunCreate,
     AssessmentRun,
@@ -34,8 +37,13 @@ from ..domain.models import (
     ProviderOption,
     RegistryEntry,
     ProjectCreate,
+    Report,
+    ReportArtifact,
+    ReportSection,
     SourceConnectionCreate,
     SourceConnection,
+    PreviewDeploymentStatus,
+    PreviewLaunchRequest,
     RiskComplianceSummary,
     RiskItem,
     Scenario,
@@ -45,6 +53,7 @@ from ..domain.models import (
 )
 from ..domain.repository import SeedRepository
 from .chat import EvidenceGroundedChatService
+from .local_preview import LocalPreviewManager
 
 
 @dataclass
@@ -62,12 +71,22 @@ class AssessmentOrchestrator:
         self,
         repository: SeedRepository,
         chat_service: EvidenceGroundedChatService | None = None,
+        local_preview_manager: LocalPreviewManager | None = None,
     ) -> None:
         self.repository = repository
         self.chat_service = chat_service
+        self.local_preview_manager = local_preview_manager
 
     def get_dashboard_summary(self) -> DashboardSummary:
         projects = self.repository.list_projects()
+        if not projects:
+            return DashboardSummary(
+                active_projects=0,
+                pending_approvals=0,
+                open_findings=0,
+                report_exports=0,
+                top_projects=[],
+            )
         seed = self.repository.get_project(projects[0].id)
         pending_approvals = sum(1 for item in seed.approvals if item.state == "pending")
         open_findings = len(seed.findings)
@@ -93,6 +112,22 @@ class AssessmentOrchestrator:
     def list_observability_traces(self, project_id: str) -> list[ObservabilityTrace]:
         return self.repository.list_observability_traces(project_id)
 
+    def list_analysis_questions(self, project_id: str) -> list[AnalysisQuestion]:
+        return self.repository.get_project(project_id).analysis_questions
+
+    def get_preview_status(self, project_id: str) -> PreviewDeploymentStatus:
+        project = self.repository.get_project(project_id)
+        if project.preview_status is None:
+            raise KeyError(project_id)
+        if self.local_preview_manager is None:
+            return project.preview_status
+        refreshed = self.local_preview_manager.get_status(project_id, project.preview_status)
+        if refreshed is not None:
+            project.preview_status = refreshed
+            self.repository.save_project(project)
+            return refreshed
+        return project.preview_status
+
     def get_workspace_context(self, workspace_id: str) -> WorkspaceContext:
         return self.repository.get_workspace_context(workspace_id)
 
@@ -114,6 +149,71 @@ class AssessmentOrchestrator:
             raise PermissionError("AWS credentials or an assumed role must be connected before deployment execution.")
         return self.repository.add_deployment_execution(project_id, request.provider, request.mode, request.triggered_by)
 
+    def answer_analysis_question(
+        self,
+        project_id: str,
+        question_id: str,
+        answer: AnalysisQuestionAnswer,
+    ) -> AnalysisQuestion:
+        project = self.repository.get_project(project_id)
+        question = next((item for item in project.analysis_questions if item.id == question_id), None)
+        if question is None:
+            raise KeyError(question_id)
+
+        question.answer = answer.answer
+        question.state = "answered"
+        project.audit_events.append(
+            AuditEvent(
+                id=f"audit-{question_id}-answer",
+                actor=answer.actor,
+                action="analysis_question.answered",
+                entity_type="analysis_question",
+                entity_id=question_id,
+                created_at=datetime.now(tz=UTC),
+                metadata={"stage": question.stage},
+            )
+        )
+        if all(item.state == "answered" for item in project.analysis_questions):
+            project.overview = project.overview.model_copy(update={"status": "analysis_ready"})
+        self.repository.save_project(project)
+        return question
+
+    def launch_local_preview(
+        self,
+        project_id: str,
+        request: PreviewLaunchRequest,
+    ) -> PreviewDeploymentStatus:
+        if self.local_preview_manager is None:
+            raise RuntimeError("Local preview support is unavailable.")
+
+        project = self.repository.get_project(project_id)
+        planning_approval = next((item for item in project.approvals if "planning" in item.phase.lower()), None)
+        if planning_approval is None or planning_approval.state != "approved":
+            raise PermissionError("Planning approval must be approved before launching the local preview.")
+        if project.intake_profile is None or project.intake_profile.source_kind != "local_path":
+            raise ValueError("Local preview is only available for local_path projects.")
+        if not project.intake_profile.source_target:
+            raise ValueError("The local project path is missing.")
+        if project.preview_status is None or not project.preview_status.supported:
+            raise ValueError("This project does not support automated local preview launch.")
+
+        status = self.local_preview_manager.launch(project_id, project.intake_profile.source_target)
+        project.preview_status = status
+        project.overview = project.overview.model_copy(update={"status": "preview_running"})
+        project.audit_events.append(
+            AuditEvent(
+                id=f"audit-{project_id}-preview-launch",
+                actor=request.triggered_by,
+                action="preview.launch_requested",
+                entity_type="preview",
+                entity_id=project_id,
+                created_at=datetime.now(tz=UTC),
+                metadata={"url": status.url or "", "workspacePath": status.workspace_path or ""},
+            )
+        )
+        self.repository.save_project(project)
+        return status
+
     def build_assessment(self, project_id: str) -> AssessmentBundle:
         seed = self.repository.get_project(project_id)
         if not seed.evidence or not seed.findings:
@@ -129,8 +229,57 @@ class AssessmentOrchestrator:
         risk_compliance = self._build_risk_summary(ctx)
         scenarios = self._build_scenarios(ctx)
         scenario_diffs = self._build_scenario_diffs(scenarios)
-        agent_outputs = self._run_agents(project_id, ctx, provider_options, cost_roi, risk_compliance, scenarios)
-        final_recommendation = self._aggregate_final(ctx, provider_options, risk_compliance, agent_outputs)
+        live_analysis = self._generate_live_analysis(seed, provider_options, cost_roi, risk_compliance, scenarios)
+        if live_analysis is not None:
+            agent_outputs = self._agent_outputs_from_live_analysis(ctx, live_analysis)
+            final_recommendation = self._final_from_live_analysis(ctx, provider_options, live_analysis)
+            reports = self._reports_from_live_analysis(ctx, live_analysis)
+            artifacts = self._artifacts_from_reports(reports)
+            seed.reports = reports
+            seed.artifacts = artifacts
+            seed.analysis_questions = self._questions_from_live_analysis(seed, live_analysis)
+            seed.overview = seed.overview.model_copy(
+                update={
+                    "migration_decision": final_recommendation.label,
+                    "confidence": final_recommendation.confidence,
+                    "recommended_provider": final_recommendation.recommended_provider,
+                    "status": "questions_pending" if seed.analysis_questions else "analysis_ready",
+                }
+            )
+            self.repository.save_project(seed)
+        elif self.repository.settings.is_judge_mode:
+            agent_outputs = [
+                AgentOutput(
+                    agent_key="live_assessment",
+                    display_name="Live Assessment Agent",
+                    status="failed",
+                    confidence=0.0,
+                    summary="The local scan completed, but live OpenAI analysis is unavailable right now.",
+                    evidence=[],
+                    structured_output={"source": "openai"},
+                    limitations=["Check OPENAI_* configuration and network access, then rerun the analysis."],
+                )
+            ]
+            final_recommendation = FinalRecommendation(
+                decision="defer",
+                label="Waiting for live analysis",
+                confidence=0.0,
+                summary="The source scan finished, but judge mode could not complete the live OpenAI analysis yet.",
+                recommended_provider=provider_options[0].name if provider_options else "Pending",
+                rationale=[
+                    "Judge mode does not fabricate fallback analysis.",
+                    "The scan evidence is available, but the live model response was unavailable.",
+                ],
+                blockers=["Live OpenAI analysis is unavailable."],
+                next_steps=[
+                    "Verify OPENAI_API_KEY and OPENAI_BASE_URL.",
+                    "Retry the analysis once outbound model access is available.",
+                ],
+                evidence=self._top_evidence(ctx.evidence, count=3),
+            )
+        else:
+            agent_outputs = self._run_agents(project_id, ctx, provider_options, cost_roi, risk_compliance, scenarios)
+            final_recommendation = self._aggregate_final(ctx, provider_options, risk_compliance, agent_outputs)
         pipeline_summaries = self._build_pipeline_summaries(project_id)
         run = AssessmentRun(
             id=f"run-{project_id}-sync",
@@ -300,25 +449,26 @@ class AssessmentOrchestrator:
     def list_agent_runs(self, project_id: str) -> list[AgentRun]:
         bundle = self.build_assessment(project_id)
         runs = [self._agent_run_from_output(bundle.run.id, item) for item in bundle.run.agent_outputs]
-        runs.append(
-            AgentRun(
-                id=f"{bundle.run.id}-iam-secrets-posture",
-                assessment_run_id=bundle.run.id,
-                agent_key="iam_secrets_posture",
-                display_name="IAM & Secrets Posture Agent",
-                stage="analysis",
-                status="succeeded",
-                critic=False,
-                confidence=0.9,
-                summary="Confirmed the source and cloud access model still requires approval-gated planning before any execution writes are enabled.",
-                evidence_count=2,
-                latency_ms=290,
-                warning_count=0,
-                retry_count=0,
-                started_at=bundle.run.started_at,
-                completed_at=bundle.run.completed_at,
+        if self.repository.settings.is_demo_mode:
+            runs.append(
+                AgentRun(
+                    id=f"{bundle.run.id}-iam-secrets-posture",
+                    assessment_run_id=bundle.run.id,
+                    agent_key="iam_secrets_posture",
+                    display_name="IAM & Secrets Posture Agent",
+                    stage="analysis",
+                    status="succeeded",
+                    critic=False,
+                    confidence=0.9,
+                    summary="Confirmed the source and cloud access model still requires approval-gated planning before any execution writes are enabled.",
+                    evidence_count=2,
+                    latency_ms=290,
+                    warning_count=0,
+                    retry_count=0,
+                    started_at=bundle.run.started_at,
+                    completed_at=bundle.run.completed_at,
+                )
             )
-        )
         return runs
 
     def list_eval_runs(self, project_id: str) -> list[EvalRun]:
@@ -357,11 +507,174 @@ class AssessmentOrchestrator:
             EvalRun(
                 id=f"{bundle.run.id}-eval",
                 assessment_run_id=bundle.run.id,
-                overall_score=97,
+                overall_score=max(0, min(100, round(sum(metric.score for metric in metrics) / len(metrics)))),
                 status="succeeded",
                 completed_at=bundle.run.completed_at,
                 metrics=metrics,
             )
+        ]
+
+    def _generate_live_analysis(
+        self,
+        project: Any,
+        provider_options: list[ProviderOption],
+        cost_roi: CostRoiSummary,
+        risk_compliance: RiskComplianceSummary,
+        scenarios: list[Scenario],
+    ) -> dict[str, object] | None:
+        if self.chat_service is None or self.repository.settings.is_demo_mode:
+            return None
+        return self.chat_service.build_assessment_payload(
+            project,
+            provider_options=provider_options,
+            cost_summary=cost_roi,
+            risk_summary=risk_compliance,
+            scenarios=scenarios,
+        )
+
+    def _agent_outputs_from_live_analysis(
+        self,
+        ctx: AssessmentContext,
+        payload: dict[str, object],
+    ) -> list[AgentOutput]:
+        outputs: list[AgentOutput] = []
+        for item in payload.get("agentOutputs", []):
+            if not isinstance(item, dict):
+                continue
+            citation_ids = [str(value) for value in item.get("citationIds", []) if isinstance(value, str)]
+            evidence = self._select_evidence(ctx, citation_ids)
+            outputs.append(
+                AgentOutput(
+                    agent_key=str(item.get("agentKey", "analysis_agent")),
+                    display_name=str(item.get("displayName", "Analysis Agent")),
+                    status="succeeded",
+                    confidence=float(item.get("confidence", 0.75)),
+                    summary=str(item.get("summary", "")),
+                    evidence=evidence,
+                    structured_output={"source": "openai"},
+                    limitations=[str(value) for value in item.get("limitations", []) if isinstance(value, str)],
+                )
+            )
+        return outputs or [
+            AgentOutput(
+                agent_key="live_assessment",
+                display_name="Live Assessment Agent",
+                status="failed",
+                confidence=0.0,
+                summary="Live OpenAI analysis did not return a usable structured payload.",
+                evidence=[],
+                structured_output={"source": "openai"},
+                limitations=["Structured analysis payload was unavailable."],
+            )
+        ]
+
+    def _final_from_live_analysis(
+        self,
+        ctx: AssessmentContext,
+        providers: list[ProviderOption],
+        payload: dict[str, object],
+    ) -> FinalRecommendation:
+        raw = payload.get("finalRecommendation")
+        if not isinstance(raw, dict):
+            return self._aggregate_final(ctx, providers, self._build_risk_summary(ctx), [])
+        citation_ids = [str(value) for value in raw.get("citationIds", []) if isinstance(value, str)]
+        evidence = self._select_evidence(ctx, citation_ids) or self._top_evidence(ctx.evidence, count=4)
+        decision = str(raw.get("decision", "defer"))
+        if decision not in {"migrate_now", "migrate_partially", "defer", "rearchitect_first"}:
+            decision = "defer"
+        return FinalRecommendation(
+            decision=decision,  # type: ignore[arg-type]
+            label=str(raw.get("label", "Defer until blockers are remediated")),
+            confidence=float(raw.get("confidence", 0.75)),
+            summary=str(raw.get("summary", "")),
+            recommended_provider=str(raw.get("recommendedProvider", providers[0].name if providers else "Pending")),
+            rationale=[str(value) for value in raw.get("rationale", []) if isinstance(value, str)],
+            blockers=[str(value) for value in raw.get("blockers", []) if isinstance(value, str)],
+            next_steps=[str(value) for value in raw.get("nextSteps", []) if isinstance(value, str)],
+            evidence=evidence,
+        )
+
+    def _questions_from_live_analysis(self, project: Any, payload: dict[str, object]) -> list[AnalysisQuestion]:
+        questions: list[AnalysisQuestion] = []
+        for index, item in enumerate(payload.get("questions", []), start=1):
+            if not isinstance(item, dict):
+                continue
+            stage = str(item.get("stage", "intake_clarification"))
+            if stage not in {
+                "intake_clarification",
+                "codebase_discovery",
+                "architecture_analysis",
+                "security_readiness",
+                "hosting_fit_recommendation",
+                "migration_strategy",
+                "infra_plan_generation",
+                "evaluation_critique",
+                "deployment_readiness",
+                "aws_execution",
+                "post_deploy_validation",
+            }:
+                stage = "intake_clarification"
+            questions.append(
+                AnalysisQuestion(
+                    id=f"{project.overview.id}-question-{index:02d}",
+                    stage=stage,  # type: ignore[arg-type]
+                    question=str(item.get("question", "")),
+                    rationale=str(item.get("rationale", "")),
+                )
+            )
+        return questions
+
+    def _reports_from_live_analysis(
+        self,
+        ctx: AssessmentContext,
+        payload: dict[str, object],
+    ) -> list[Report]:
+        generated_at = datetime.now(tz=UTC)
+        reports: list[Report] = []
+        for index, item in enumerate(payload.get("reports", []), start=1):
+            if not isinstance(item, dict):
+                continue
+            kind = str(item.get("kind", "executive_summary"))
+            if kind not in {"executive_summary", "technical_dossier", "cost_report", "risk_report"}:
+                kind = "executive_summary"
+            sections: list[ReportSection] = []
+            for section in item.get("sections", []):
+                if not isinstance(section, dict):
+                    continue
+                citation_ids = [str(value) for value in section.get("citationIds", []) if isinstance(value, str)]
+                sections.append(
+                    ReportSection(
+                        title=str(section.get("title", "Section")),
+                        body=str(section.get("body", "")),
+                        citations=self._select_evidence(ctx, citation_ids),
+                    )
+                )
+            reports.append(
+                Report(
+                    id=f"report-{kind}-{index:02d}",
+                    kind=kind,  # type: ignore[arg-type]
+                    title=str(item.get("title", "Assessment Report")),
+                    summary=str(item.get("summary", "")),
+                    confidence=float(item.get("confidence", 0.75)),
+                    sections=sections,
+                    generated_at=generated_at,
+                    artifact_ids=[f"artifact-{kind}-{index:02d}"],
+                )
+            )
+        return reports
+
+    @staticmethod
+    def _artifacts_from_reports(reports: list[Report]) -> list[ReportArtifact]:
+        return [
+            ReportArtifact(
+                id=report.artifact_ids[0],
+                kind=report.kind,
+                title=f"{report.title} PDF",
+                format="pdf",
+                description=report.summary,
+                updated_at=report.generated_at,
+            )
+            for report in reports
         ]
 
     def list_factory_proposals(self, project_id: str) -> list[FactoryProposal]:
@@ -414,6 +727,13 @@ class AssessmentOrchestrator:
                 },
             )
         )
+        if "planning" in approval.phase.lower():
+            seed.overview = seed.overview.model_copy(
+                update={
+                    "status": "approved_for_execution" if decision.decision == "approved" else "planning_rejected",
+                }
+            )
+        self.repository.save_project(seed)
         return approval
 
     def _run_agents(
@@ -867,7 +1187,11 @@ class AssessmentOrchestrator:
         agent_outputs: list[AgentOutput],
     ) -> FinalRecommendation:
         high_blockers = [finding.title for finding in ctx.findings if finding.severity in {"critical", "high"}]
-        average_confidence = sum(output.confidence for output in agent_outputs) / len(agent_outputs)
+        average_confidence = (
+            sum(output.confidence for output in agent_outputs) / len(agent_outputs)
+            if agent_outputs
+            else 0.0
+        )
         return FinalRecommendation(
             decision="defer",
             label="Defer until blockers are remediated",
@@ -896,6 +1220,8 @@ class AssessmentOrchestrator:
     @staticmethod
     def _select_evidence(ctx: AssessmentContext, evidence_ids: list[str]) -> list[EvidenceReference]:
         selected = [item for item in ctx.evidence if item.id in set(evidence_ids)]
+        if not selected:
+            return AssessmentOrchestrator._top_evidence(ctx.evidence, count=min(3, len(ctx.evidence)))
         return sorted(selected, key=lambda item: evidence_ids.index(item.id))
 
     @staticmethod

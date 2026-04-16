@@ -1,8 +1,10 @@
 export type Severity = "critical" | "high" | "medium" | "low";
 export type ApprovalState = "not_required" | "pending" | "approved" | "rejected";
 export type RunStatus = "queued" | "running" | "succeeded" | "failed";
+export type AppMode = "demo" | "judge";
 export type ConnectionStatus = "connected" | "needs_attention" | "proposed" | "disabled";
 export type PipelineStatus = "queued" | "running" | "blocked" | "succeeded" | "failed";
+export type SourceKind = "local_path" | "github" | "azure_repos";
 export type ReportKind =
   | "executive_summary"
   | "technical_dossier"
@@ -141,7 +143,7 @@ export interface Report {
 
 export interface SourceConnection {
   id: string;
-  kind: "local_directory" | "github" | "azure_repos";
+  kind: SourceKind;
   name: string;
   status: ConnectionStatus;
   mode: "read_only" | "discovery" | "approval_gated";
@@ -235,6 +237,25 @@ export interface FactoryProposal {
   approvalRequired: boolean;
 }
 
+export interface ProjectCreate {
+  name: string;
+  clientName: string;
+  sourceKind?: SourceKind;
+  sourceTarget?: string;
+  expectedUsers?: number;
+  preferredCloud?: "aws" | "gcp" | "azure";
+  businessConstraints?: string[];
+  complianceNotes?: string[];
+  credentialLabel?: string;
+  credentialKind?: "token" | "oauth" | "assumed_role" | "access_key" | "none";
+  sourceSystem?: string;
+  targetSystem?: string;
+  businessSummary?: string;
+  owner?: string;
+  primaryRegion?: string;
+  complianceTags?: string[];
+}
+
 export interface ProjectOverview {
   id: string;
   name: string;
@@ -245,6 +266,47 @@ export interface ProjectOverview {
   phase: string;
   status: string;
   recommendedProvider: string;
+}
+
+export interface RuntimeDescriptor {
+  appMode: AppMode;
+  defaultWorkspaceId: string;
+  desktopDownloadUrl: string;
+  desktopAvailable: boolean;
+  version: string;
+}
+
+export interface OrganizationSummary {
+  id: string;
+  name: string;
+  slug: string;
+  mode: "demo" | "standard" | "judge";
+}
+
+export interface WorkspaceSummary {
+  id: string;
+  organizationId: string;
+  name: string;
+  slug: string;
+  mode: "demo" | "standard" | "judge";
+  projectCount: number;
+}
+
+export interface ClientAccountSummary {
+  id: string;
+  workspaceId: string;
+  name: string;
+  industry: string;
+  primaryRegion: string;
+  complianceTags: string[];
+}
+
+export interface WorkspaceContext {
+  organization: OrganizationSummary;
+  workspace: WorkspaceSummary;
+  clientAccounts: ClientAccountSummary[];
+  projects: ProjectOverview[];
+  runtime: RuntimeDescriptor;
 }
 
 export interface DashboardSummary {
@@ -360,7 +422,7 @@ export interface IntakeProfile {
   projectId: string;
   name: string;
   clientName: string;
-  sourceKind: "local_directory" | "github" | "azure_repos";
+  sourceKind: SourceKind;
   sourceTarget: string;
   expectedUsers: number;
   preferredCloud: "aws" | "gcp" | "azure";
@@ -412,6 +474,26 @@ export interface DeploymentPlan {
   requiredActions: string[];
   artifacts: DeploymentArtifact[];
   lastExecution?: DeploymentExecution;
+}
+
+export interface AnalysisQuestion {
+  id: string;
+  stage: PipelineSummary["pipelineKey"];
+  question: string;
+  rationale: string;
+  state: "pending" | "answered";
+  answer?: string;
+}
+
+export interface PreviewDeploymentStatus {
+  status: "idle" | "ready" | "running" | "succeeded" | "failed" | "unsupported";
+  supported: boolean;
+  summary: string;
+  url?: string;
+  healthSummary?: string;
+  workspacePath?: string;
+  logTail: string[];
+  updatedAt: string;
 }
 
 export interface ObservabilityTrace {

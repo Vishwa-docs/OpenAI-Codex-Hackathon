@@ -8,10 +8,11 @@ import {
   ProgramBoardPanel,
   ReportCenterPanel
 } from "@/components/project-workspace";
+import { PreviewLaunchCard } from "@/components/preview-launch-card";
 import { RecommendationList } from "@/components/section-page";
 import { Card, MetricCard, PillList, SectionHeader } from "@/components/ui";
 import { EvaluationPanel, ProviderComparison, ReadinessGauge } from "@/components/visualizations";
-import { loadProjectDataset } from "@/lib/api";
+import { loadProjectDataset } from "@/lib/app-api";
 import { formatConfidence } from "@/lib/format";
 
 export default async function ProjectOverviewPage({
@@ -21,6 +22,9 @@ export default async function ProjectOverviewPage({
 }) {
   const { projectId } = await params;
   const project = await loadProjectDataset(projectId);
+  const planningApproved = project.approvals.some(
+    (approval) => approval.phase.toLowerCase().includes("planning") && approval.state === "approved"
+  );
 
   return (
     <div className="space-y-6">
@@ -66,6 +70,11 @@ export default async function ProjectOverviewPage({
       <MtcPipelinePanel mtcPipeline={project.mtcPipeline} />
       <ObservabilityPanel observability={project.observability} />
       <DeploymentReadinessPanel deploymentPlan={project.deploymentPlan} />
+      <PreviewLaunchCard
+        projectId={project.projectId}
+        previewStatus={project.previewStatus}
+        planningApproved={planningApproved}
+      />
       <CommandCenterPanel
         connectors={project.connectors}
         approvals={project.approvals}

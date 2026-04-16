@@ -8,6 +8,7 @@ import { Kysely, PostgresDialect } from "kysely";
 import { headers } from "next/headers";
 import { Pool } from "pg";
 import { mapAuthSession, type AuthSession } from "@/lib/auth-shared";
+import { getJudgeSession, isJudgeMode } from "@/lib/runtime";
 
 type GlobalWithAuth = typeof globalThis & {
   __cmcAuthInstance?: ReturnType<typeof createAuthInstance>;
@@ -112,10 +113,16 @@ export async function ensureAuthSchema() {
 }
 
 export async function getServerSession() {
+  const requestHeaders = await headers();
+  const host = requestHeaders.get("host") ?? "";
+  if (isJudgeMode() && /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host)) {
+    return getJudgeSession();
+  }
+
   try {
     await ensureAuthSchema();
     const payload = await getAuth().api.getSession({
-      headers: await headers(),
+      headers: requestHeaders,
     });
 
     return mapAuthSession(payload as Parameters<typeof mapAuthSession>[0]);

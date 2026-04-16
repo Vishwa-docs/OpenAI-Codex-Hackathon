@@ -2,6 +2,7 @@
 import { createMockProjectDataset } from "@/lib/mock-data";
 import { DemoWorkflowForm } from "@/components/demo-workflow-form";
 import { Badge, SectionHeader } from "@/components/ui";
+import { getDesktopDownloadUrl, isJudgeMode } from "@/lib/runtime";
 import Link from "next/link";
 
 const stages = [
@@ -31,6 +32,60 @@ const checklist = [
 ];
 
 export default async function DemoPage() {
+  if (isJudgeMode()) {
+    return (
+      <main className="mx-auto max-w-7xl px-6 pb-20 pt-14 lg:px-8">
+        <div className="grid gap-10 lg:grid-cols-[1fr_0.95fr]">
+          <div>
+            <SectionHeader
+              eyebrow="Judge workflow"
+              title="Judge mode disables the seeded demo and starts from the packaged desktop app."
+              description="The localhost workflow now begins with a download, an empty intake workspace, and a real local project path. No LegacyCart seed or simulated fallback is used in this mode."
+              action={
+                <Link href={getDesktopDownloadUrl()} className="rounded-full bg-sky-400 px-5 py-3 text-sm font-medium text-slate-950">
+                  Download macOS app
+                </Link>
+              }
+            />
+            <div className="mt-8 grid gap-4">
+              {[
+                "Launch the local SaaS site and download the packaged desktop app.",
+                "Open the app to start the local API, worker, and web runtime automatically.",
+                "Paste a real local repository path into the empty intake workspace.",
+                "Answer analysis questions, review reports, approve planning, and launch the local preview.",
+              ].map((step, index) => (
+                <div key={step} className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4">
+                  <p className="text-xs uppercase tracking-[0.28em] text-slate-400">{`0${index + 1}`}</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-200">{step}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-4 rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(56,189,248,0.12),rgba(15,23,42,0.32))] p-6">
+            <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Judge-mode posture</p>
+            <h2 className="text-3xl font-semibold text-white">No bundled dummy project is used in this path.</h2>
+            <div className="space-y-3">
+              {[
+                "Workspace starts empty.",
+                "Local-path scan stays read-only until planning is approved.",
+                "Analysis questions and approvals are persisted in the control plane.",
+                "Local preview launch is enabled only after planning approval.",
+              ].map((item) => (
+                <div key={item} className="rounded-[1.4rem] border border-white/10 bg-white/[0.05] px-4 py-3 text-sm leading-6 text-slate-200">
+                  {item}
+                </div>
+              ))}
+            </div>
+            <Link href="/projects/new" className="inline-flex rounded-full border border-white/10 px-5 py-3 text-sm font-medium text-white transition hover:bg-white/[0.06]">
+              Open intake workspace
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   let project = createMockProjectDataset("legacycart");
   let liveDataUnavailable = false;
 
@@ -111,4 +166,3 @@ export default async function DemoPage() {
     </main>
   );
 }
-

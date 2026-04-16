@@ -10,7 +10,7 @@ def test_vnext_project_resources_are_exposed() -> None:
     source_connections = client.get("/api/v1/projects/legacycart/source-connections")
     assert source_connections.status_code == 200
     source_payload = source_connections.json()
-    assert {item["kind"] for item in source_payload} == {"local_directory", "github", "azure_repos"}
+    assert {item["kind"] for item in source_payload} == {"local_path", "github", "azure_repos"}
     assert any(item["status"] == "connected" for item in source_payload)
 
     cloud_connections = client.get("/api/v1/projects/legacycart/cloud-connections")
@@ -108,7 +108,7 @@ def test_can_create_local_path_project_and_fetch_mtc_surfaces() -> None:
     project = response.json()
     project_id = project["id"]
     assert project["expectedUsers"] == 25
-    assert project["sourceKind"] == "local_directory"
+    assert project["sourceKind"] == "local_path"
 
     intake = client.get(f"/api/v1/projects/{project_id}/intake")
     assert intake.status_code == 200

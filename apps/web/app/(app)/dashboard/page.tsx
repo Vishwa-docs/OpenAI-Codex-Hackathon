@@ -1,5 +1,6 @@
-﻿import { Badge, Card, MetricCard, SectionHeader } from "@/components/ui";
-import { loadDashboardSummary, loadProjectDataset } from "@/lib/app-api";
+import { AnalysisQuestionQueue } from "@/components/analysis-question-queue";
+import { Badge, Card, MetricCard, SectionHeader } from "@/components/ui";
+import { DEFAULT_WORKSPACE_ID, loadDashboardSummary, loadProjectDataset, loadWorkspaceProjects } from "@/lib/app-api";
 import Link from "next/link";
 
 function formatTimestamp(value: string | undefined) {
@@ -22,31 +23,36 @@ function formatCurrency(value: number) {
 }
 
 export default async function DashboardPage() {
-  const [dashboard, project] = await Promise.all([loadDashboardSummary(), loadProjectDataset("legacycart")]);
+  const [dashboard, projects] = await Promise.all([loadDashboardSummary(), loadWorkspaceProjects(DEFAULT_WORKSPACE_ID)]);
 
+  if (projects.length === 0) {
+    return (
+      <div className="space-y-6">
+        <SectionHeader
+          eyebrow="MTC workbench"
+          title="The judge workspace is ready for the first real project."
+          description="Download the macOS desktop app from the local SaaS site or start directly here by pasting a real project path into the intake workspace."
+          action={
+            <Link href="/projects/new" className="rounded-full bg-sky-400 px-5 py-3 text-sm font-medium text-slate-950">
+              Open intake workspace
+            </Link>
+          }
+        />
+        <Card className="space-y-4">
+          <h2 className="text-lg font-medium text-white">No analysis is running yet</h2>
+          <p className="text-sm leading-6 text-slate-300">
+            Nothing has been preloaded into this UI. Start with a real local path so the swarm can scan code, raise questions, generate reports, and prepare the approval-safe execution plan.
+          </p>
+        </Card>
+      </div>
+    );
+  }
+
+  const activeProject = projects[0];
+  const project = await loadProjectDataset(activeProject.id);
   const pendingApproval = project.approvals.find((approval) => approval.state === "pending");
   const nextWave = project.roadmap.waves[0];
-
-  const questionQueue = [
-    {
-      title: "Confirm residency and retention constraints",
-      owner: "Compliance lead",
-      detail: project.riskModel.complianceNotes[2] ?? "The AI needs a residency answer before it can lock the execution plan.",
-      nextStep: "Answer in approval review",
-    },
-    {
-      title: "Select the first approval-safe migration sequence",
-      owner: "Program sponsor",
-      detail: project.scenarioDiffs[1]?.summary ?? "The AI needs a human choice between the safest and fastest wave sequence.",
-      nextStep: "Compare scenarios",
-    },
-    {
-      title: "Decide which delivery components survive wave 1",
-      owner: "Platform owner",
-      detail: project.findings[2]?.recommendation ?? "The AI is waiting for a call on interim delivery-chain posture.",
-      nextStep: "Review findings",
-    },
-  ];
+  const openQuestionCount = project.analysisQuestions.filter((question) => question.state !== "answered").length;
 
   const inferenceBoard = [
     {
@@ -62,10 +68,10 @@ export default async function DashboardPage() {
       confidence: `${project.providers[0]?.score ?? 0} score`,
     },
     {
-      label: "Immediate move",
-      title: project.recommendations[0]?.title ?? "Review the top recommendation",
-      detail: project.recommendations[0]?.summary ?? "The dashboard keeps the next action visible without opening another tool.",
-      confidence: `${project.evaluation.overallScore} evaluation score`,
+      label: "Preview posture",
+      title: project.previewStatus.supported ? "Local preview supported" : "Preview support limited",
+      detail: project.previewStatus.summary,
+      confidence: project.previewStatus.status,
     },
   ];
 
@@ -77,12 +83,12 @@ export default async function DashboardPage() {
   }));
 
   const pipelineLinks = [
-    { href: "/projects/legacycart", label: "Open project overview", detail: "Readiness, evidence posture, and executive framing." },
-    { href: "/projects/legacycart/findings", label: "Review findings", detail: "Inspect blockers, recommendations, and evidence citations." },
-    { href: "/projects/legacycart/scenarios", label: "Compare scenarios", detail: "See how the recommendation changes when answers change." },
-    { href: "/projects/legacycart/reports", label: "Open reports", detail: "Move through executive, technical, and planning packs." },
-    { href: "/projects/legacycart/approvals", label: "Manage approvals", detail: "Keep planning and execution behind explicit signoff." },
-    { href: "/projects/legacycart/connectors", label: "Check connectors", detail: "Inspect source state, sync posture, and adapter readiness." },
+    { href: `/projects/${project.projectId}`, label: "Open project overview", detail: "Readiness, evidence posture, and executive framing." },
+    { href: `/projects/${project.projectId}/findings`, label: "Review findings", detail: "Inspect blockers, recommendations, and evidence citations." },
+    { href: `/projects/${project.projectId}/scenarios`, label: "Compare scenarios", detail: "See how the recommendation changes when answers change." },
+    { href: `/projects/${project.projectId}/reports`, label: "Open reports", detail: "Move through executive, technical, and planning packs." },
+    { href: `/projects/${project.projectId}/approvals`, label: "Manage approvals", detail: "Keep planning and execution behind explicit signoff." },
+    { href: `/projects/${project.projectId}/connectors`, label: "Check connectors", detail: "Inspect source state, sync posture, and adapter readiness." },
   ];
 
   const recentConversation = [...project.chat].slice(-3).reverse();
@@ -96,7 +102,7 @@ export default async function DashboardPage() {
         title="Every MTC interaction now lives inside the dashboard."
         description="The public site sells the product. The local runtime performs the AI work. This surface is where operators answer open questions, inspect inferences, review reports, and move the pipeline forward safely."
         action={
-          <Link href="/projects/legacycart" className="rounded-full bg-sky-400 px-5 py-3 text-sm font-medium text-slate-950">
+          <Link href={`/projects/${project.projectId}`} className="rounded-full bg-sky-400 px-5 py-3 text-sm font-medium text-slate-950">
             Open active workspace
           </Link>
         }
@@ -111,7 +117,7 @@ export default async function DashboardPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Badge tone="blue">Local AI runtime</Badge>
-            <Badge tone="amber">{`${questionQueue.length} open questions`}</Badge>
+            <Badge tone="amber">{`${openQuestionCount} open questions`}</Badge>
             <Badge tone="green">{project.overview.status}</Badge>
           </div>
         </div>
@@ -135,11 +141,9 @@ export default async function DashboardPage() {
             <p className="mt-2 text-sm leading-6 text-slate-300">{nextWave?.description ?? "The dashboard is waiting for the next approved planning step."}</p>
           </div>
           <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-4">
-            <p className="text-xs uppercase tracking-[0.24em] text-slate-300">Pending gate</p>
-            <h3 className="mt-2 text-lg font-medium text-white">{pendingApproval ? `${pendingApproval.phase} approval` : "No open approval gate"}</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-300">
-              {pendingApproval?.comment ?? "The pipeline is clear to continue with the current dashboard actions."}
-            </p>
+            <p className="text-xs uppercase tracking-[0.24em] text-slate-300">Preview status</p>
+            <h3 className="mt-2 text-lg font-medium text-white">{project.previewStatus.status}</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-300">{project.previewStatus.summary}</p>
           </div>
         </div>
       </Card>
@@ -154,23 +158,9 @@ export default async function DashboardPage() {
                 Use this lane when the system needs business, compliance, or delivery context before the next report or plan update.
               </p>
             </div>
-            <Badge tone="amber">{questionQueue.length}</Badge>
+            <Badge tone="amber">{openQuestionCount}</Badge>
           </div>
-          <div className="space-y-3">
-            {questionQueue.map((question) => (
-              <div key={question.title} className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 className="text-base font-medium text-white">{question.title}</h3>
-                    <p className="mt-1 text-xs uppercase tracking-[0.22em] text-sky-200/80">{question.owner}</p>
-                  </div>
-                  <Badge tone="rose">answer needed</Badge>
-                </div>
-                <p className="mt-3 text-sm leading-6 text-slate-300">{question.detail}</p>
-                <p className="mt-3 text-xs uppercase tracking-[0.22em] text-slate-400">{question.nextStep}</p>
-              </div>
-            ))}
-          </div>
+          <AnalysisQuestionQueue projectId={project.projectId} questions={project.analysisQuestions} />
         </Card>
 
         <Card className="space-y-4">
@@ -178,9 +168,6 @@ export default async function DashboardPage() {
             <div>
               <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Inference board</p>
               <h2 className="mt-2 text-xl font-medium text-white">What the system believes right now</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-300">
-                Each inference stays close to its confidence, rationale, and next move so the dashboard feels like a working AI partner.
-              </p>
             </div>
             <Badge tone="blue">live narrative</Badge>
           </div>
@@ -205,9 +192,6 @@ export default async function DashboardPage() {
             <div>
               <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Reports ready</p>
               <h2 className="mt-2 text-xl font-medium text-white">Reports are presented like answers, not buried downloads.</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-300">
-                Operators should be able to open the right narrative immediately, then export it only when needed.
-              </p>
             </div>
             <Badge tone="green">{project.exportFormats.length} export types</Badge>
           </div>
@@ -229,9 +213,6 @@ export default async function DashboardPage() {
           <div>
             <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Pipeline navigation</p>
             <h2 className="mt-2 text-xl font-medium text-white">Move through the MTC pipeline from one surface.</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-300">
-              Once the local AI run finishes, every follow-on interaction should start from this dashboard.
-            </p>
           </div>
           <div className="grid gap-3">
             {pipelineLinks.map((item) => (
@@ -329,4 +310,3 @@ export default async function DashboardPage() {
     </div>
   );
 }
-

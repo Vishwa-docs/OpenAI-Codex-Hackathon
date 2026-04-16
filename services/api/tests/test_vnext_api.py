@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 
 from services.api.app.main import app
 
+
 client = TestClient(app)
 
 
@@ -84,3 +85,94 @@ def test_reports_cover_msp_facing_variants() -> None:
         "cutover_rollback",
         "operations_checklist",
     } <= report_kinds
+
+
+def test_can_create_local_path_project_and_fetch_mtc_surfaces() -> None:
+    response = client.post(
+        "/api/v1/projects",
+        json={
+            "name": "Demo local migration",
+            "clientName": "Founder Studio",
+            "sourceKind": "local_directory",
+            "sourceTarget": "demo-systems/legacycart",
+            "expectedUsers": 25,
+            "preferredCloud": "aws",
+            "businessConstraints": ["Launch quickly", "Keep ops simple"],
+            "complianceNotes": ["PII handling"],
+            "credentialLabel": "Local folder",
+            "credentialKind": "none",
+        },
+    )
+
+    assert response.status_code == 201
+    project = response.json()
+    project_id = project["id"]
+    assert project["expectedUsers"] == 25
+    assert project["sourceKind"] == "local_directory"
+
+    intake = client.get(f"/api/v1/projects/{project_id}/intake")
+    assert intake.status_code == 200
+    assert intake.json()["sourceTarget"] == "demo-systems/legacycart"
+
+    traces = client.get(f"/api/v1/projects/{project_id}/observability-traces")
+    assert traces.status_code == 200
+    trace_payload = traces.json()
+    assert trace_payload
+    assert any(item["stageKey"] == "hosting_fit_recommendation" for item in trace_payload)
+    assert any(item["evaluationSummary"] for item in trace_payload)
+
+    deployment = client.get(f"/api/v1/projects/{project_id}/deployment-plan")
+    assert deployment.status_code == 200
+    deployment_payload = deployment.json()
+    assert deployment_payload["executionState"] == "blocked"
+    assert deployment_payload["recommendedPlatform"]["platformKey"] == "aws-ec2"
+    assert any(option["platformKey"] == "vercel" for option in deployment_payload["platformOptions"])
+
+
+def test_aws_execution_requires_credentials_then_succeeds_after_connection() -> None:
+    response = client.post(
+        "/api/v1/projects",
+        json={
+            "name": "AWS deployable project",
+            "clientName": "Northstar Labs",
+            "sourceKind": "local_directory",
+            "sourceTarget": "demo-systems/legacycart",
+            "expectedUsers": 400,
+            "preferredCloud": "aws",
+            "credentialLabel": "Local folder",
+            "credentialKind": "none",
+        },
+    )
+    project_id = response.json()["id"]
+
+    blocked = client.post(
+        f"/api/v1/projects/{project_id}/deployment-executions",
+        json={"provider": "aws", "mode": "dry_run", "triggeredBy": "Ava"},
+    )
+    assert blocked.status_code == 409
+    assert "credentials" in blocked.json()["detail"].lower()
+
+    cloud_connection = client.post(
+        f"/api/v1/projects/{project_id}/cloud-connections",
+        json={
+            "provider": "aws",
+            "name": "AWS prod",
+            "accountLabel": "Acct 1",
+            "regionScope": ["us-east-1"],
+            "mode": "dry_run",
+            "credentialLabel": "Cockpit role",
+            "credentialKind": "assumed_role",
+            "notes": ["Ready for demo deployment"],
+        },
+    )
+    assert cloud_connection.status_code == 201
+
+    execution = client.post(
+        f"/api/v1/projects/{project_id}/deployment-executions",
+        json={"provider": "aws", "mode": "dry_run", "triggeredBy": "Ava"},
+    )
+    assert execution.status_code == 201
+    payload = execution.json()
+    assert payload["status"] == "succeeded"
+    assert payload["provider"] == "aws"
+    assert payload["mode"] == "dry_run"

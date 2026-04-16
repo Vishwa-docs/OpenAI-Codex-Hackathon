@@ -2,42 +2,45 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal
 
-from ..core.settings import get_settings
 from ..domain.models import (
-    AgentOutput,
     AgentRun,
+    AgentOutput,
+    AssessmentBundle,
+    AssessmentRunCreate,
+    AssessmentRun,
     ApprovalDecision,
     ApprovalRecord,
-    AssessmentBundle,
-    AssessmentRun,
-    AssessmentRunCreate,
     AuditEvent,
+    CostRoiSummary,
+    DashboardSummary,
+    DeploymentExecution,
+    DeploymentExecutionRequest,
+    DeploymentPlan,
     ChatMessage,
     ChatMessageCreate,
     CloudConnection,
     CloudConnectionCreate,
-    CostRoiSummary,
-    DashboardSummary,
+    EvidenceReference,
     EvalMetric,
     EvalRun,
-    EvidenceReference,
-    FactoryProposal,
     FinalRecommendation,
     Finding,
+    FactoryProposal,
+    IntakeProfile,
+    ObservabilityTrace,
     PipelineSummary,
-    ProjectCreate,
     ProjectOverview,
     ProviderOption,
     RegistryEntry,
+    ProjectCreate,
+    SourceConnectionCreate,
+    SourceConnection,
     RiskComplianceSummary,
     RiskItem,
     Scenario,
     ScenarioDiff,
     ScenarioOutcome,
-    SourceConnection,
-    SourceConnectionCreate,
     WorkspaceContext,
 )
 from ..domain.repository import SeedRepository
@@ -53,7 +56,7 @@ class AssessmentContext:
 
 
 class AssessmentOrchestrator:
-    """Assessment orchestration service for the local SaaS control plane."""
+    """Deterministic multi-agent assessment service for the MVP."""
 
     def __init__(
         self,
@@ -61,18 +64,14 @@ class AssessmentOrchestrator:
         chat_service: EvidenceGroundedChatService | None = None,
     ) -> None:
         self.repository = repository
-        self.chat_service = chat_service or EvidenceGroundedChatService(get_settings())
+        self.chat_service = chat_service
 
     def get_dashboard_summary(self) -> DashboardSummary:
         projects = self.repository.list_projects()
-        pending_approvals = 0
-        open_findings = 0
-        report_exports = 0
-        for project in projects:
-            seed = self.repository.get_project(project.id)
-            pending_approvals += sum(1 for item in seed.approvals if item.state == "pending")
-            open_findings += len(seed.findings)
-            report_exports += len([item for item in seed.artifacts if item.format == "pdf"])
+        seed = self.repository.get_project(projects[0].id)
+        pending_approvals = sum(1 for item in seed.approvals if item.state == "pending")
+        open_findings = len(seed.findings)
+        report_exports = len([item for item in seed.artifacts if item.format == "pdf"])
         return DashboardSummary(
             active_projects=len(projects),
             pending_approvals=pending_approvals,
@@ -81,37 +80,64 @@ class AssessmentOrchestrator:
             top_projects=projects,
         )
 
+    def create_project(self, **kwargs) -> IntakeProfile:
+        project = self.repository.create_project(ProjectCreate(**kwargs))
+        return project.intake_profile
+
+    def get_intake_profile(self, project_id: str) -> IntakeProfile:
+        return self.repository.get_intake_profile(project_id)
+
+    def get_deployment_plan(self, project_id: str) -> DeploymentPlan:
+        return self.repository.get_deployment_plan(project_id)
+
+    def list_observability_traces(self, project_id: str) -> list[ObservabilityTrace]:
+        return self.repository.list_observability_traces(project_id)
+
+    def get_workspace_context(self, workspace_id: str) -> WorkspaceContext:
+        return self.repository.get_workspace_context(workspace_id)
+
+    def list_workspace_projects(self, workspace_id: str) -> list[ProjectOverview]:
+        return self.repository.list_workspace_projects(workspace_id)
+
+    def create_workspace_project(self, workspace_id: str, draft: ProjectCreate) -> ProjectOverview:
+        return self.repository.create_workspace_project(workspace_id, draft)
+
+    def execute_deployment(
+        self,
+        project_id: str,
+        request: DeploymentExecutionRequest,
+    ) -> DeploymentExecution:
+        project = self.repository.get_project(project_id)
+        if request.provider != "aws":
+            raise ValueError("Only AWS automation is supported in v1.")
+        if not any(connection.provider == "aws" for connection in project.cloud_connections):
+            raise PermissionError("AWS credentials or an assumed role must be connected before deployment execution.")
+        return self.repository.add_deployment_execution(project_id, request.provider, request.mode, request.triggered_by)
+
     def build_assessment(self, project_id: str) -> AssessmentBundle:
         seed = self.repository.get_project(project_id)
-        completed_at = datetime.now(UTC).replace(microsecond=0)
-        started_at = completed_at.replace(second=max(0, completed_at.second - 18))
+        if not seed.evidence or not seed.findings:
+            return self._build_pending_assessment_bundle(project_id, seed)
         ctx = AssessmentContext(
             overview=seed.overview,
             findings=seed.findings,
             evidence=seed.evidence,
             registry_entries=seed.registry_entries,
         )
-        if not seed.evidence or not seed.findings:
-            return self._build_pending_assessment_bundle(
-                project_id=project_id,
-                seed=seed,
-                started_at=started_at,
-                completed_at=completed_at,
-            )
         provider_options = self._build_provider_options(ctx)
         cost_roi = self._build_cost_roi(ctx)
         risk_compliance = self._build_risk_summary(ctx)
         scenarios = self._build_scenarios(ctx)
         scenario_diffs = self._build_scenario_diffs(scenarios)
-        agent_outputs = self._run_agents(ctx, provider_options, cost_roi, risk_compliance, scenarios)
+        agent_outputs = self._run_agents(project_id, ctx, provider_options, cost_roi, risk_compliance, scenarios)
         final_recommendation = self._aggregate_final(ctx, provider_options, risk_compliance, agent_outputs)
-        pipeline_summaries = self._build_pipeline_summaries(started_at, completed_at)
+        pipeline_summaries = self._build_pipeline_summaries(project_id)
         run = AssessmentRun(
             id=f"run-{project_id}-sync",
             project_id=project_id,
             status="succeeded",
-            started_at=started_at,
-            completed_at=completed_at,
+            started_at=datetime(2026, 4, 16, 10, 30, tzinfo=UTC),
+            completed_at=datetime(2026, 4, 16, 10, 30, tzinfo=UTC),
             mode="sync",
             pipeline_summaries=pipeline_summaries,
             agent_outputs=agent_outputs,
@@ -135,17 +161,101 @@ class AssessmentOrchestrator:
             registry_entries=seed.registry_entries,
         )
 
+    def _build_pending_assessment_bundle(self, project_id: str, seed) -> AssessmentBundle:
+        started_at = datetime(2026, 4, 16, 12, 10, tzinfo=UTC)
+        run = AssessmentRun(
+            id=f"run-{project_id}-pending",
+            project_id=project_id,
+            status="queued",
+            started_at=started_at,
+            completed_at=started_at,
+            mode="sync",
+            pipeline_summaries=[
+                PipelineSummary(
+                    pipeline_key="intake_clarification",
+                    title="Intake and clarification",
+                    status="running",
+                    summary="Business context is captured, but source evidence still needs to be ingested.",
+                    plain_language_summary="We have the project shell, but not enough code evidence yet.",
+                    started_at=started_at,
+                ),
+                PipelineSummary(
+                    pipeline_key="codebase_discovery",
+                    title="Codebase discovery",
+                    status="blocked",
+                    summary="Connect a local path or repository and run the first scan.",
+                    plain_language_summary="The cockpit needs the source before it can analyze anything.",
+                ),
+            ],
+            agent_outputs=[
+                AgentOutput(
+                    agent_key="intake_normalizer",
+                    display_name="Intake Normalizer Agent",
+                    status="succeeded",
+                    confidence=0.71,
+                    summary="Captured the project shell and blocked execution until evidence is available.",
+                    evidence=[],
+                    structured_output={"phase": "intake", "sourceConnected": False},
+                )
+            ],
+            final_recommendation=FinalRecommendation(
+                decision="defer",
+                label="Assessment pending evidence ingestion",
+                confidence=0.55,
+                summary="Do not start migration planning yet. Capture source evidence first, then let the assessment swarm produce a cited recommendation.",
+                recommended_provider="AWS",
+                rationale=[
+                    "The project has intake data but no repository or runtime evidence yet.",
+                    "Provider, cost, and risk guidance would be too speculative without a worker scan.",
+                    "The control plane keeps planning and execution blocked until evidence exists.",
+                ],
+                blockers=["No connected source has been ingested.", "No assessment run has produced evidence-backed findings yet."],
+                next_steps=[
+                    "Connect a local directory, GitHub repo, or Azure Repos project.",
+                    "Run the first assessment to populate evidence, findings, and reports.",
+                ],
+                evidence=[],
+            ),
+        )
+        return AssessmentBundle(
+            run=run,
+            overview=seed.overview,
+            dashboard=self.get_dashboard_summary(),
+            graph=seed.graph,
+            findings=seed.findings,
+            provider_options=[],
+            cost_roi=CostRoiSummary(
+                annual_baseline_cost=0,
+                annual_target_cost=0,
+                migration_investment=0,
+                annual_savings=0,
+                payback_months=0,
+                roi_percent=0,
+                summary="Cost modeling begins after evidence ingestion.",
+                confidence=0.0,
+                assumptions=[],
+                evidence=[],
+            ),
+            risk_compliance=RiskComplianceSummary(
+                overall_risk="moderate",
+                compliance_frameworks=["Pending intake validation"],
+                data_residency="Data residency posture cannot be finalized until workload evidence is validated.",
+                operational_readiness="Initial intake exists, but no evidence-backed readiness verdict is available yet.",
+                risks=[],
+                summary="The project is safe to keep in intake, but not ready for migration recommendations.",
+                confidence=0.55,
+            ),
+            scenarios=[],
+            scenario_diffs=[],
+            reports=seed.reports,
+            artifacts=seed.artifacts,
+            approvals=seed.approvals,
+            audit_events=seed.audit_events,
+            registry_entries=seed.registry_entries,
+        )
+
     def list_source_connections(self, project_id: str) -> list[SourceConnection]:
         return self.repository.get_project(project_id).source_connections
-
-    def get_workspace_context(self, workspace_id: str) -> WorkspaceContext:
-        return self.repository.get_workspace_context(workspace_id)
-
-    def list_workspace_projects(self, workspace_id: str) -> list[ProjectOverview]:
-        return self.repository.list_workspace_projects(workspace_id)
-
-    def create_workspace_project(self, workspace_id: str, draft: ProjectCreate) -> ProjectOverview:
-        return self.repository.create_workspace_project(workspace_id, draft)
 
     def create_source_connection(
         self,
@@ -181,8 +291,8 @@ class AssessmentOrchestrator:
             update={
                 "id": f"run-{project_id}-{request.mode.replace('_', '-')}-{run_number:03d}",
                 "mode": request.mode,
-                "started_at": datetime.now(UTC).replace(microsecond=0),
-                "completed_at": datetime.now(UTC).replace(microsecond=0),
+                "started_at": datetime(2026, 4, 16, 11, 3, tzinfo=UTC),
+                "completed_at": datetime(2026, 4, 16, 11, 4, tzinfo=UTC),
             }
         )
         return self.repository.add_assessment_run(project_id, run, request.triggered_by)
@@ -225,7 +335,7 @@ class AssessmentOrchestrator:
                 metric_key="unsupported_claim_rate",
                 label="Unsupported claim rate",
                 score=98,
-                summary="No unsupported claims were promoted into the current surfaced outputs.",
+                summary="No unsupported claims were promoted into the seeded outputs.",
                 status="pass",
             ),
             EvalMetric(
@@ -262,7 +372,7 @@ class AssessmentOrchestrator:
 
     def create_chat_message(self, project_id: str, draft: ChatMessageCreate) -> ChatMessage:
         message = self.repository.add_chat_message(project_id, draft)
-        if draft.role == "human":
+        if draft.role == "human" and self.chat_service is not None:
             project = self.repository.get_project(project_id)
             assistant_reply = self.chat_service.build_reply(project, draft.content)
             self.repository.add_chat_message(
@@ -304,222 +414,27 @@ class AssessmentOrchestrator:
                 },
             )
         )
-        self.repository.save_project(seed)
         return approval
-
-    def _build_pending_assessment_bundle(
-        self,
-        project_id: str,
-        seed,
-        started_at: datetime,
-        completed_at: datetime,
-    ) -> AssessmentBundle:
-        pipeline_summaries = [
-            PipelineSummary(
-                pipeline_key="intake_connections",
-                title="Intake connections",
-                status="running",
-                summary="Business context is captured, but source and cloud connections still need validation before assessment can begin.",
-                started_at=started_at,
-            ),
-            PipelineSummary(
-                pipeline_key="evidence_ingestion",
-                title="Evidence ingestion",
-                status="blocked",
-                summary="No normalized evidence exists yet. Connect a repository or local directory and trigger a scan.",
-            ),
-            PipelineSummary(
-                pipeline_key="assessment_swarm",
-                title="Assessment swarm",
-                status="blocked",
-                summary="Assessment agents are waiting for evidence-backed inputs from the worker pipeline.",
-            ),
-            PipelineSummary(
-                pipeline_key="planning_artifacts",
-                title="Planning artifacts",
-                status="blocked",
-                summary="Planning artifacts remain unavailable until the first assessment completes.",
-            ),
-            PipelineSummary(
-                pipeline_key="report_composition",
-                title="Report composition",
-                status="blocked",
-                summary="Reports and exports are generated only after the assessment dossier exists.",
-            ),
-            PipelineSummary(
-                pipeline_key="evals_governance",
-                title="Evals and governance",
-                status="queued",
-                summary="Critic checks and eval scoring will run after the first assessment run is completed.",
-            ),
-        ]
-        provider_options = [
-            ProviderOption(
-                id="aws",
-                name="AWS",
-                score=74,
-                best_for="The first live execution adapter and the default landing-zone baseline for new projects.",
-                tradeoffs=["Provider choice should be revisited after discovery", "Current score is based on intake data only"],
-                rationale="AWS stays the default planning baseline until source evidence and cloud inventory refine the recommendation.",
-                confidence=0.58,
-                evidence=[],
-            ),
-            ProviderOption(
-                id="gcp",
-                name="Google Cloud",
-                score=68,
-                best_for="Lean managed-service footprints for application and data modernization programs.",
-                tradeoffs=["No source evidence has been ingested yet", "Current ranking is advisory only"],
-                rationale="GCP remains a viable alternative, but there is not enough project evidence yet for a stronger recommendation.",
-                confidence=0.5,
-                evidence=[],
-            ),
-            ProviderOption(
-                id="azure",
-                name="Azure",
-                score=67,
-                best_for="Enterprise governance and Microsoft-heavy operating environments.",
-                tradeoffs=["No source evidence has been ingested yet", "Current ranking is advisory only"],
-                rationale="Azure remains in scope for comparison, pending workload evidence and connector data.",
-                confidence=0.5,
-                evidence=[],
-            ),
-        ]
-        cost_roi = CostRoiSummary(
-            annual_baseline_cost=0,
-            annual_target_cost=0,
-            migration_investment=0,
-            annual_savings=0,
-            payback_months=0,
-            roi_percent=0,
-            summary="Cost and ROI scoring is waiting for source discovery, workload shape, and environment evidence.",
-            confidence=0.32,
-            assumptions=["Connect a source system before treating any estimate as actionable."],
-            evidence=[],
-        )
-        risk_summary = RiskComplianceSummary(
-            overall_risk="moderate",
-            compliance_frameworks=["Pending intake validation"],
-            data_residency="Data residency posture cannot be finalized until regions, workloads, and storage paths are validated.",
-            operational_readiness="Initial intake exists, but no evidence-backed operational readiness verdict is available yet.",
-            risks=[
-                RiskItem(
-                    id="risk-missing-evidence",
-                    severity="medium",
-                    domain="assessment",
-                    title="Assessment evidence has not been collected yet",
-                    impact="Migration guidance would be speculative until the worker ingests repository, runtime, and configuration evidence.",
-                    mitigation="Connect a source and run the first assessment before presenting provider, cost, or risk decisions to stakeholders.",
-                    confidence=0.78,
-                    evidence=[],
-                )
-            ],
-            summary="The project is safe to keep in intake, but not ready for evidence-backed migration recommendations.",
-            confidence=0.55,
-        )
-        scenarios = [
-            Scenario(
-                id="scenario-connect-local",
-                name="Connect a local source first",
-                description="Validate the workload from a checked-out repository or filesystem path before comparing providers.",
-                assumption_set=["A local or hosted source connection is available.", "The project owner can approve a read-only scan."],
-                outcome=ScenarioOutcome(
-                    readiness=42,
-                    risk_delta="-15%",
-                    cost_delta="n/a",
-                    summary="Fastest path to evidence-backed guidance and the best next action for a newly created project.",
-                ),
-            )
-        ]
-        final_recommendation = FinalRecommendation(
-            decision="defer",
-            label="Assessment pending evidence ingestion",
-            confidence=0.55,
-            summary="Do not start migration planning yet. Capture source evidence first, then let the assessment swarm produce a cited recommendation.",
-            recommended_provider="AWS",
-            rationale=[
-                "The project has intake data but no repository or runtime evidence yet.",
-                "Provider, cost, and risk guidance would be too speculative without a worker scan.",
-                "The control plane keeps planning and execution blocked until evidence exists.",
-            ],
-            blockers=["No connected source has been ingested.", "No assessment run has produced evidence-backed findings yet."],
-            next_steps=[
-                "Connect a local directory, GitHub repo, or Azure Repos project.",
-                "Run the first assessment to populate evidence, findings, and reports.",
-                "Review the resulting provider, cost, and risk recommendations before requesting planning approval.",
-            ],
-            evidence=[],
-        )
-        agent_outputs = [
-            AgentOutput(
-                agent_key="intake_normalizer",
-                display_name="Intake Normalizer Agent",
-                status="succeeded",
-                confidence=0.71,
-                summary="Captured the project scope and target environment, but flagged the dossier as intake-only until evidence arrives.",
-                evidence=[],
-                structured_output={"phase": "intake", "sourceConnected": False},
-            ),
-            AgentOutput(
-                agent_key="safety_critic",
-                display_name="Safety Critic Agent",
-                status="succeeded",
-                confidence=0.93,
-                summary="Planning and execution remain safely blocked until the first evidence-backed assessment run is completed.",
-                evidence=[],
-                structured_output={"writeActionsDetected": 0, "requiresApproval": True, "executionEnabled": False},
-            ),
-        ]
-        run = AssessmentRun(
-            id=f"run-{project_id}-sync",
-            project_id=project_id,
-            status="queued",
-            started_at=started_at,
-            completed_at=completed_at,
-            mode="sync",
-            pipeline_summaries=pipeline_summaries,
-            agent_outputs=agent_outputs,
-            final_recommendation=final_recommendation,
-        )
-        return AssessmentBundle(
-            run=run,
-            overview=seed.overview,
-            dashboard=self.get_dashboard_summary(),
-            graph=seed.graph,
-            findings=seed.findings,
-            provider_options=provider_options,
-            cost_roi=cost_roi,
-            risk_compliance=risk_summary,
-            scenarios=scenarios,
-            scenario_diffs=[],
-            reports=seed.reports,
-            artifacts=seed.artifacts,
-            approvals=seed.approvals,
-            audit_events=seed.audit_events,
-            registry_entries=seed.registry_entries,
-        )
 
     def _run_agents(
         self,
+        project_id: str,
         ctx: AssessmentContext,
         provider_options: list[ProviderOption],
         cost_roi: CostRoiSummary,
         risk_compliance: RiskComplianceSummary,
         scenarios: list[Scenario],
     ) -> list[AgentOutput]:
-        grouped_evidence = self._top_evidence(ctx.evidence, count=3)
+        grouped_evidence = self._top_evidence(ctx.evidence, count=2)
         highest_finding = sorted(ctx.findings, key=self._severity_rank)[0]
-        top_findings = sorted(ctx.findings, key=self._severity_rank)[:3]
-        proposed_entries = [
-            item.model_dump(by_alias=True) for item in ctx.registry_entries if item.status == "proposed"
-        ]
+        deployment_plan = self.repository.get_deployment_plan(project_id)
         return [
             AgentOutput(
                 agent_key="intake_normalizer",
                 display_name="Intake Normalizer Agent",
                 status="succeeded",
                 confidence=0.95,
-                summary="Captured migration goal as phased modernization with strong security, rollback, and approval constraints.",
+                summary="Captured migration goal as phased modernization with strong security and rollback constraints.",
                 evidence=grouped_evidence,
                 structured_output={
                     "targetRegion": "us-east-1",
@@ -532,45 +447,9 @@ class AssessmentOrchestrator:
                 display_name="Codebase Discovery Agent",
                 status="succeeded",
                 confidence=0.92,
-                summary="Identified a legacy web tier, backend service, PostgreSQL datastore, cron-style jobs, shared storage, and legacy pipeline assets.",
-                evidence=self._select_evidence(ctx, ["java runtime", "postgres", "nfs"]),
+                summary="Identified a Java monolith, AngularJS admin app, cron jobs, Jenkins pipeline, PostgreSQL, and shared NFS storage.",
+                evidence=self._select_evidence(ctx, ["ev-java8-runtime", "ev-nfs-invoices"]),
                 structured_output={"componentsDiscovered": 7, "legacyRuntimes": ["Java 8", "AngularJS 1.x"]},
-            ),
-            AgentOutput(
-                agent_key="infra_manifest_analyzer",
-                display_name="Infra Manifest Analyzer Agent",
-                status="succeeded",
-                confidence=0.9,
-                summary="Infra manifests indicate host-coupled delivery, plaintext database connection patterns, and legacy network assumptions.",
-                evidence=self._select_evidence(ctx, ["compose", "jenkins", "database url"]),
-                structured_output={"manifestSignals": ["docker-compose", "jenkins", "legacy network assumptions"]},
-            ),
-            AgentOutput(
-                agent_key="dependency_graph",
-                display_name="Dependency Graph Agent",
-                status="succeeded",
-                confidence=0.91,
-                summary="The dependency graph centers on the backend, PostgreSQL, shared invoice storage, and brittle external integration seams.",
-                evidence=self._select_evidence(ctx, ["postgres", "nfs", "soap"]),
-                structured_output={"criticalPaths": ["backend->postgres", "jobs->postgres", "backend->integration"]},
-            ),
-            AgentOutput(
-                agent_key="database_data_store",
-                display_name="Database & Data Store Analyzer Agent",
-                status="succeeded",
-                confidence=0.92,
-                summary="PostgreSQL and shared invoice storage are the most important stateful migration surfaces and need controlled backup, restore, and cutover handling.",
-                evidence=self._select_evidence(ctx, ["postgres", "invoices", "shared"]),
-                structured_output={"primaryStores": ["PostgreSQL", "shared invoice storage"], "migrationPattern": "phased with restore validation"},
-            ),
-            AgentOutput(
-                agent_key="runtime_ops_readiness",
-                display_name="Runtime / Ops Readiness Agent",
-                status="succeeded",
-                confidence=0.89,
-                summary="Operational readiness is partial because the runtime is legacy, jobs are host-coupled, and observability controls need hardening.",
-                evidence=self._select_evidence(ctx, ["java runtime", "cron", "authorization"]),
-                structured_output={"runtimeReadiness": "partial", "rollbackPreparedness": "needs_work"},
             ),
             AgentOutput(
                 agent_key="security_secrets",
@@ -580,7 +459,7 @@ class AssessmentOrchestrator:
                 summary="Flagged hardcoded production credentials, long-lived pipeline access keys, and sensitive log leakage as immediate blockers.",
                 evidence=self._select_evidence(
                     ctx,
-                    ["database credentials", "access key", "authorization cookie logs"],
+                    ["ev-app-prod-db-secret", "ev-jenkins-access-key", "ev-logback-pii"],
                 ),
                 structured_output={
                     "criticalSecrets": 2,
@@ -594,7 +473,7 @@ class AssessmentOrchestrator:
                 status="succeeded",
                 confidence=risk_compliance.confidence,
                 summary=risk_compliance.summary,
-                evidence=self._select_evidence(ctx, ["authorization cookie logs", "nfs invoices"]),
+                evidence=self._select_evidence(ctx, ["ev-logback-pii", "ev-nfs-invoices"]),
                 structured_output=risk_compliance.model_dump(by_alias=True),
             ),
             AgentOutput(
@@ -607,6 +486,18 @@ class AssessmentOrchestrator:
                 structured_output={"recommendedProvider": provider_options[0].id, "decisionStyle": "phased_replatform"},
             ),
             AgentOutput(
+                agent_key="hosting_fit_advisor",
+                display_name="Hosting Fit Advisor Agent",
+                status="succeeded",
+                confidence=0.89,
+                summary="Ranked simpler platforms before recommending heavier managed microservices.",
+                evidence=grouped_evidence,
+                structured_output={
+                    "recommendedPlatform": deployment_plan.recommended_platform.platform_key,
+                    "platformOptions": [option.model_dump(by_alias=True) for option in deployment_plan.platform_options],
+                },
+            ),
+            AgentOutput(
                 agent_key="cost_roi",
                 display_name="Cost & ROI Agent",
                 status="succeeded",
@@ -616,79 +507,29 @@ class AssessmentOrchestrator:
                 structured_output=cost_roi.model_dump(by_alias=True),
             ),
             AgentOutput(
-                agent_key="architecture_planner",
-                display_name="Architecture Planner Agent",
-                status="succeeded",
-                confidence=0.88,
-                summary="Recommended a landing zone with isolated environments, managed data services, object storage, and approval-gated delivery controls.",
-                evidence=self._select_evidence(ctx, ["postgres", "nfs", "access key"]),
-                structured_output={"targetArchitecture": provider_options[0].name, "environmentStrategy": ["dev", "staging", "prod"]},
-            ),
-            AgentOutput(
-                agent_key="container_kubernetes",
-                display_name="Container / Kubernetes Planner Agent",
-                status="succeeded",
-                confidence=0.84,
-                summary="Containerization is viable after runtime upgrades and secret remediation, with Kubernetes adoption gated behind ops maturity.",
-                evidence=self._select_evidence(ctx, ["java runtime", "compose"]),
-                structured_output={"containerizationReadiness": "conditional", "kubernetesReadiness": "later_phase"},
-            ),
-            AgentOutput(
-                agent_key="devops_pipeline",
-                display_name="DevOps Pipeline Agent",
-                status="succeeded",
-                confidence=0.87,
-                summary="The current delivery path needs short-lived credentials, clearer approvals, and environment-aware promotion controls before cloud execution is enabled.",
-                evidence=self._select_evidence(ctx, ["jenkins", "access key"]),
-                structured_output={"deliveryGuardrails": ["short-lived credentials", "approval gates", "promotion controls"]},
-            ),
-            AgentOutput(
                 agent_key="scenario_what_if",
                 display_name="Scenario / What-if Agent",
                 status="succeeded",
                 confidence=0.86,
                 summary="Prepared three migration paths that trade off speed, risk burn-down, and modernization investment.",
-                evidence=self._select_evidence(ctx, ["cron database", "soap gateway"]),
+                evidence=self._select_evidence(ctx, ["ev-cron-direct-db", "ev-soap-basic-auth"]),
                 structured_output={"scenarioCount": len(scenarios)},
-            ),
-            AgentOutput(
-                agent_key="report_composer",
-                display_name="Report Composer Agent",
-                status="succeeded",
-                confidence=0.89,
-                summary="Compiled executive, technical, risk, architecture, migration-wave, and operations views from the same evidence base.",
-                evidence=grouped_evidence,
-                structured_output={"reportFamilies": ["executive", "technical", "risk", "architecture", "roadmap", "operations"]},
-            ),
-            AgentOutput(
-                agent_key="executive_summary",
-                display_name="Executive Summary Agent",
-                status="succeeded",
-                confidence=0.9,
-                summary=f"Prepared an executive framing around {ctx.overview.migration_decision.lower()} with {ctx.overview.recommended_provider} as the leading provider path.",
-                evidence=grouped_evidence,
-                structured_output={"headlineDecision": ctx.overview.migration_decision, "recommendedProvider": ctx.overview.recommended_provider},
             ),
             AgentOutput(
                 agent_key="tool_gap_detector",
                 display_name="Tool Gap Detector Agent",
                 status="succeeded",
                 confidence=0.84,
-                summary="Detected connector and evidence-collection gaps that still need approved scaffold proposals before activation.",
+                summary="Detected missing Azure Repos ingestion and certificate inventory capabilities; proposed disabled registry entries for both.",
                 evidence=[],
                 structured_output={
-                    "proposedEntries": proposed_entries
+                    "proposedEntries": [
+                        item.model_dump(by_alias=True)
+                        for item in ctx.registry_entries
+                        if item.status == "proposed"
+                    ]
                 },
-                limitations=["Scaffold proposals stay disabled until approved and implemented with the needed credentials."],
-            ),
-            AgentOutput(
-                agent_key="tool_connector_scaffold",
-                display_name="Tool / Connector Scaffold Agent",
-                status="succeeded",
-                confidence=0.82,
-                summary="Prepared scaffold metadata for disabled registry proposals so they can be approved, tracked, and implemented safely.",
-                evidence=[],
-                structured_output={"proposalCount": len(proposed_entries), "proposals": proposed_entries},
+                limitations=["Factory proposals are metadata-only in the MVP and do not execute scaffolding yet."],
             ),
             AgentOutput(
                 agent_key="citation_evidence_critic",
@@ -716,108 +557,119 @@ class AssessmentOrchestrator:
                     "executionEnabled": False,
                 },
             ),
-            AgentOutput(
-                agent_key="final_recommendation_aggregator",
-                display_name="Final Recommendation Aggregator",
-                status="succeeded",
-                confidence=round(sum(item.confidence for item in top_findings) / len(top_findings), 2),
-                summary=(
-                    f"Final synthesis recommends {ctx.overview.migration_decision.lower()} after closing the highest-risk blockers: "
-                    + ", ".join(finding.title for finding in top_findings)
-                ),
-                evidence=grouped_evidence,
-                structured_output={
-                    "decision": ctx.overview.migration_decision,
-                    "blockers": [finding.title for finding in top_findings],
-                    "recommendedProvider": provider_options[0].name,
-                },
-            ),
         ]
 
-    @staticmethod
-    def _build_pipeline_summaries(
-        started_at: datetime,
-        completed_at: datetime,
-    ) -> list[PipelineSummary]:
+    def _build_pipeline_summaries(self, project_id: str) -> list[PipelineSummary]:
+        started_at = datetime(2026, 4, 16, 10, 30, tzinfo=UTC)
+        completed_at = datetime(2026, 4, 16, 10, 31, tzinfo=UTC)
+        deployment_plan = self.repository.get_deployment_plan(project_id)
+        executed = bool(self.repository.get_project(project_id).deployment_executions)
         return [
             PipelineSummary(
-                pipeline_key="intake_connections",
-                title="Intake connections",
+                pipeline_key="intake_clarification",
+                title="Intake and clarification",
                 status="succeeded",
-                summary="Project intake and connector context have been normalized for the current assessment run.",
+                summary="The cockpit collected the project source, expected users, and business constraints.",
+                plain_language_summary="We first learn what the app is, where the code lives, and how big the first release needs to be.",
                 started_at=started_at,
                 completed_at=completed_at,
             ),
             PipelineSummary(
-                pipeline_key="evidence_ingestion",
-                title="Evidence ingestion",
+                pipeline_key="codebase_discovery",
+                title="Codebase discovery",
                 status="succeeded",
-                summary="Worker evidence has been normalized into canonical findings, citations, and graph inputs.",
+                summary="The worker scanned the project source and normalized code, config, and runtime evidence.",
+                plain_language_summary="The system inspected the codebase and pulled out important clues about how it works today.",
                 started_at=started_at,
                 completed_at=completed_at,
             ),
             PipelineSummary(
-                pipeline_key="assessment_swarm",
-                title="Assessment swarm",
+                pipeline_key="architecture_analysis",
+                title="Architecture analysis",
                 status="succeeded",
-                summary="Specialist agents completed their analysis pass over the current project evidence.",
+                summary="Architecture agents traced services, dependencies, storage, jobs, and integration boundaries.",
+                plain_language_summary="The swarm mapped how the app is put together and which parts are risky or tightly coupled.",
                 started_at=started_at,
                 completed_at=completed_at,
             ),
             PipelineSummary(
-                pipeline_key="planning_artifacts",
-                title="Planning artifacts",
-                status="blocked",
-                summary="Planning artifacts remain approval gated until the planning decision is recorded.",
-                started_at=started_at,
-            ),
-            PipelineSummary(
-                pipeline_key="report_composition",
-                title="Report composition",
+                pipeline_key="security_readiness",
+                title="Security and readiness review",
                 status="succeeded",
-                summary="Executive, technical, and planning reports are ready for export from the current evidence set.",
+                summary="Security and readiness agents flagged blockers around secrets, logging, and operational coupling.",
+                plain_language_summary="Before we talk about cloud, we check what could break or create security problems in production.",
                 started_at=started_at,
                 completed_at=completed_at,
             ),
             PipelineSummary(
-                pipeline_key="evals_governance",
-                title="Evals and governance",
+                pipeline_key="hosting_fit_recommendation",
+                title="Hosting-fit recommendation",
                 status="succeeded",
-                summary="Critic checks, approval records, and governance metadata are available for review.",
+                summary="The swarm compared simple and advanced hosting options to avoid over-engineering the migration plan.",
+                plain_language_summary="This step asks whether a simpler deployment is enough right now.",
                 started_at=started_at,
                 completed_at=completed_at,
+            ),
+            PipelineSummary(
+                pipeline_key="migration_strategy",
+                title="Migration strategy selection",
+                status="succeeded",
+                summary="The strategy pass chose between lift-and-shift, phased EC2, containerization, and refactor-heavy tracks.",
+                plain_language_summary="The cockpit picked the safest migration style for the codebase, budget, and expected traffic.",
+                started_at=started_at,
+                completed_at=completed_at,
+            ),
+            PipelineSummary(
+                pipeline_key="infra_plan_generation",
+                title="Infrastructure plan generation",
+                status="succeeded",
+                summary="Terraform and Ansible starter artifacts were generated for review before any write action.",
+                plain_language_summary="We prepared the infrastructure plan, but nothing is applied automatically without review.",
+                started_at=started_at,
+                completed_at=completed_at,
+            ),
+            PipelineSummary(
+                pipeline_key="evaluation_critique",
+                title="Evaluation and critique",
+                status="succeeded",
+                summary="Critic agents validated evidence, recommendation consistency, and safety posture.",
+                plain_language_summary="A second pass checked whether the suggestions were grounded and safe.",
+                started_at=started_at,
+                completed_at=completed_at,
+            ),
+            PipelineSummary(
+                pipeline_key="deployment_readiness",
+                title="Deployment readiness",
+                status="succeeded" if deployment_plan.execution_state in {"ready", "succeeded"} else "blocked",
+                summary="Deployment stays approval-gated until AWS credentials and planning approval are available.",
+                plain_language_summary="The app tells you exactly what is still missing before it can deploy to AWS.",
+                started_at=started_at,
+                completed_at=completed_at if deployment_plan.execution_state in {"ready", "succeeded"} else None,
+            ),
+            PipelineSummary(
+                pipeline_key="aws_execution",
+                title="AWS execution",
+                status="succeeded" if executed else "blocked",
+                summary="AWS dry-run or apply can be triggered only after credentials are connected.",
+                plain_language_summary="We only attempt an AWS deploy after you connect credentials and review the plan.",
+                started_at=started_at,
+                completed_at=completed_at if executed else None,
+            ),
+            PipelineSummary(
+                pipeline_key="post_deploy_validation",
+                title="Post-deploy validation",
+                status="queued",
+                summary="Post-deploy validation is ready to compare rollout health, cost posture, and refactor next steps.",
+                plain_language_summary="After deployment, the cockpit will check health and suggest the next improvements.",
+                started_at=started_at,
             ),
         ]
 
     @staticmethod
     def _agent_run_from_output(assessment_run_id: str, output: AgentOutput) -> AgentRun:
-        stage_map: dict[
-            str,
-            Literal["intake", "discovery", "analysis", "planning", "critique", "reporting"],
-        ] = {
-            "intake_normalizer": "intake",
-            "codebase_discovery": "discovery",
-            "infra_manifest_analyzer": "discovery",
-            "dependency_graph": "discovery",
-            "database_data_store": "analysis",
-            "runtime_ops_readiness": "analysis",
-            "security_secrets": "analysis",
-            "risk_compliance": "analysis",
-            "tool_gap_detector": "analysis",
-            "cloud_recommendation": "planning",
-            "cost_roi": "planning",
-            "architecture_planner": "planning",
-            "container_kubernetes": "planning",
-            "devops_pipeline": "planning",
-            "scenario_what_if": "planning",
-            "tool_connector_scaffold": "planning",
-            "citation_evidence_critic": "critique",
-            "safety_critic": "critique",
-            "report_composer": "reporting",
-            "executive_summary": "reporting",
-            "final_recommendation_aggregator": "reporting",
-        }
-        stage = stage_map.get(output.agent_key, "analysis")
+        stage = "critique" if output.agent_key.endswith("_critic") else (
+            "planning" if output.agent_key in {"cloud_recommendation", "hosting_fit_advisor", "cost_roi", "scenario_what_if"} else "analysis"
+        )
         return AgentRun(
             id=f"{assessment_run_id}-{output.agent_key}",
             assessment_run_id=assessment_run_id,
@@ -837,7 +689,7 @@ class AssessmentOrchestrator:
         )
 
     def _build_provider_options(self, ctx: AssessmentContext) -> list[ProviderOption]:
-        shared = self._select_evidence(ctx, ["nfs invoices", "cron database", "soap gateway"])
+        shared = self._select_evidence(ctx, ["ev-nfs-invoices", "ev-cron-direct-db", "ev-soap-basic-auth"])
         return [
             ProviderOption(
                 id="aws",
@@ -865,14 +717,14 @@ class AssessmentOrchestrator:
                 score=74,
                 best_for="Organizations with deep Microsoft identity and enterprise governance standards.",
                 tradeoffs=["MVP lacks Azure Repos ingestion", "Current SOAP and batch patterns still need rework before a safe landing zone"],
-                rationale="Viable for enterprise controls, but the current roadmap and evidence still fit AWS more naturally.",
+                rationale="Viable for enterprise controls, but the current product roadmap and seeded evidence fit AWS more naturally.",
                 confidence=0.79,
                 evidence=shared,
             ),
         ]
 
     def _build_cost_roi(self, ctx: AssessmentContext) -> CostRoiSummary:
-        evidence = self._select_evidence(ctx, ["nfs invoices", "cron database", "java runtime"])
+        evidence = self._select_evidence(ctx, ["ev-nfs-invoices", "ev-cron-direct-db", "ev-java8-runtime"])
         return CostRoiSummary(
             annual_baseline_cost=168000,
             annual_target_cost=132000,
@@ -899,7 +751,7 @@ class AssessmentOrchestrator:
             impact="Any infrastructure move would carry breach and privilege-escalation risk until secrets are rotated and moved out of source control.",
             mitigation="Vault secrets, rotate credentials, and adopt short-lived deployment identities before the planning phase closes.",
             confidence=0.97,
-            evidence=self._select_evidence(ctx, ["database credentials", "access key"]),
+            evidence=self._select_evidence(ctx, ["ev-app-prod-db-secret", "ev-jenkins-access-key"]),
         )
         logging = RiskItem(
             id="risk-pii-logs",
@@ -909,7 +761,7 @@ class AssessmentOrchestrator:
             impact="Non-production-grade logging creates privacy exposure and undermines audit readiness.",
             mitigation="Implement structured redaction and tighten retention before wider cloud observability rollout.",
             confidence=0.93,
-            evidence=self._select_evidence(ctx, ["authorization cookie logs"]),
+            evidence=self._select_evidence(ctx, ["ev-logback-pii"]),
         )
         ops = RiskItem(
             id="risk-ops-coupling",
@@ -919,7 +771,7 @@ class AssessmentOrchestrator:
             impact="Cutover and rollback plans are fragile because nightly jobs assume direct shell and database access.",
             mitigation="Move jobs into queue-backed workers with observable retries and least-privilege credentials.",
             confidence=0.88,
-            evidence=self._select_evidence(ctx, ["cron database", "nfs invoices"]),
+            evidence=self._select_evidence(ctx, ["ev-cron-direct-db", "ev-nfs-invoices"]),
         )
         return RiskComplianceSummary(
             overall_risk="high",
@@ -1016,32 +868,16 @@ class AssessmentOrchestrator:
     ) -> FinalRecommendation:
         high_blockers = [finding.title for finding in ctx.findings if finding.severity in {"critical", "high"}]
         average_confidence = sum(output.confidence for output in agent_outputs) / len(agent_outputs)
-        decision: Literal["migrate_now", "migrate_partially", "defer", "rearchitect_first"]
-        if ctx.overview.readiness_score >= 75:
-            decision = "migrate_now"
-            label = "Migrate now"
-        elif ctx.overview.readiness_score >= 65:
-            decision = "migrate_partially"
-            label = "Migrate partially"
-        elif ctx.overview.readiness_score >= 50:
-            decision = "defer"
-            label = "Defer until blockers are remediated"
-        else:
-            decision = "rearchitect_first"
-            label = "Re-architect first"
         return FinalRecommendation(
-            decision=decision,
-            label=label,
+            decision="defer",
+            label="Defer until blockers are remediated",
             confidence=round(average_confidence, 2),
-            summary=(
-                f"Current assessment outcome: {label}. Close wave-0 blockers first, then revisit a phased "
-                f"{providers[0].name} migration once the highest-risk issues are remediated."
-            ),
+            summary="Do not begin the cloud migration yet. Close wave-0 blockers first, then revisit a phased AWS migration once secrets, logging leaks, and delivery identity gaps are remediated.",
             recommended_provider=providers[0].name,
             rationale=[
-                f"{providers[0].name} best supports the requested future execution model and staged modernization path.",
+                "AWS best supports the requested future execution model and staged modernization path.",
                 "Managed PostgreSQL and S3 directly address the current database and NFS storage pain points.",
-                f"The current overall risk is {risk_summary.overall_risk}, which is too high for direct execution without remediation.",
+                "The current risk profile is too high for direct execution or partial cutover without a remediation wave.",
             ],
             blockers=high_blockers,
             next_steps=[
@@ -1059,43 +895,9 @@ class AssessmentOrchestrator:
 
     @staticmethod
     def _select_evidence(ctx: AssessmentContext, evidence_ids: list[str]) -> list[EvidenceReference]:
-        selected: list[EvidenceReference] = []
-        seen_ids: set[str] = set()
-
-        for hint in evidence_ids:
-            candidates = [item for item in ctx.evidence if item.id == hint]
-            if not candidates:
-                candidates = [
-                    item for item in ctx.evidence if AssessmentOrchestrator._matches_evidence_hint(item, hint)
-                ]
-            for item in sorted(candidates, key=lambda evidence: evidence.confidence, reverse=True):
-                if item.id not in seen_ids:
-                    selected.append(item)
-                    seen_ids.add(item.id)
-
-        return selected or AssessmentOrchestrator._top_evidence(ctx.evidence, count=min(2, len(ctx.evidence)))
+        selected = [item for item in ctx.evidence if item.id in set(evidence_ids)]
+        return sorted(selected, key=lambda item: evidence_ids.index(item.id))
 
     @staticmethod
     def _top_evidence(evidence: list[EvidenceReference], count: int) -> list[EvidenceReference]:
         return sorted(evidence, key=lambda item: item.confidence, reverse=True)[:count]
-
-    @staticmethod
-    def _matches_evidence_hint(item: EvidenceReference, hint: str) -> bool:
-        raw_text = f"{item.source_uri} {item.excerpt}".lower()
-        collapsed_text = (
-            raw_text.replace(" ", "")
-            .replace("-", "")
-            .replace("_", "")
-            .replace("/", "")
-            .replace(":", "")
-        )
-        cleaned_hint = hint.lower().removeprefix("ev-").replace("_", " ").replace("-", " ")
-        tokens = [token for token in cleaned_hint.split() if token]
-        if not tokens:
-            return False
-
-        collapsed_hint = "".join(tokens)
-        if collapsed_hint and collapsed_hint in collapsed_text:
-            return True
-
-        return all(token in raw_text or token in collapsed_text for token in tokens[:2])

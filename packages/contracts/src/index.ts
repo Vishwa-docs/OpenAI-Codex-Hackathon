@@ -1,7 +1,7 @@
 export type Severity = "critical" | "high" | "medium" | "low";
 export type ApprovalState = "not_required" | "pending" | "approved" | "rejected";
 export type RunStatus = "queued" | "running" | "succeeded" | "failed";
-export type ConnectionStatus = "connected" | "needs_attention" | "needs_configuration" | "proposed" | "disabled";
+export type ConnectionStatus = "connected" | "needs_attention" | "proposed" | "disabled";
 export type PipelineStatus = "queued" | "running" | "blocked" | "succeeded" | "failed";
 export type ReportKind =
   | "executive_summary"
@@ -166,15 +166,21 @@ export interface CloudConnection {
 
 export interface PipelineSummary {
   pipelineKey:
-    | "intake_connections"
-    | "evidence_ingestion"
-    | "assessment_swarm"
-    | "planning_artifacts"
-    | "report_composition"
-    | "evals_governance";
+    | "intake_clarification"
+    | "codebase_discovery"
+    | "architecture_analysis"
+    | "security_readiness"
+    | "hosting_fit_recommendation"
+    | "migration_strategy"
+    | "infra_plan_generation"
+    | "evaluation_critique"
+    | "deployment_readiness"
+    | "aws_execution"
+    | "post_deploy_validation";
   title: string;
   status: PipelineStatus;
   summary: string;
+  plainLanguageSummary?: string;
   startedAt?: string;
   completedAt?: string;
 }
@@ -239,56 +245,6 @@ export interface ProjectOverview {
   phase: string;
   status: string;
   recommendedProvider: string;
-}
-
-export interface UserProfile {
-  id: string;
-  email: string;
-  name: string;
-  activeOrganizationId?: string | null;
-}
-
-export interface OrganizationSummary {
-  id: string;
-  name: string;
-  slug: string;
-  mode: "demo" | "standard";
-}
-
-export interface WorkspaceSummary {
-  id: string;
-  organizationId: string;
-  name: string;
-  slug: string;
-  mode: "demo" | "standard";
-  projectCount: number;
-}
-
-export interface ClientAccountSummary {
-  id: string;
-  workspaceId: string;
-  name: string;
-  industry: string;
-  primaryRegion: string;
-  complianceTags: string[];
-}
-
-export interface WorkspaceContext {
-  organization: OrganizationSummary;
-  workspace: WorkspaceSummary;
-  clientAccounts: ClientAccountSummary[];
-  projects: ProjectOverview[];
-}
-
-export interface ProjectCreate {
-  name: string;
-  clientName: string;
-  sourceSystem: string;
-  targetSystem: string;
-  businessSummary: string;
-  owner: string;
-  primaryRegion: string;
-  complianceTags: string[];
 }
 
 export interface DashboardSummary {
@@ -397,6 +353,80 @@ export interface ChatMessage {
   author: string;
   createdAt: string;
   content: string;
+}
+
+export interface IntakeProfile {
+  id: string;
+  projectId: string;
+  name: string;
+  clientName: string;
+  sourceKind: "local_directory" | "github" | "azure_repos";
+  sourceTarget: string;
+  expectedUsers: number;
+  preferredCloud: "aws" | "gcp" | "azure";
+  businessConstraints: string[];
+  complianceNotes: string[];
+  credentialLabel: string;
+  credentialKind: "token" | "oauth" | "assumed_role" | "access_key" | "none";
+  founderSummary: string;
+}
+
+export interface PlatformRecommendation {
+  platformKey: "vercel" | "railway" | "aws-ec2" | "aws-ecs" | "aws-lambda" | "cloudflare-workers";
+  label: string;
+  fitScore: number;
+  bestFor: string;
+  rationale: string;
+  plainLanguageRationale: string;
+  tradeoffs: string[];
+  monthlyCostEstimate: string;
+  scalingThreshold: string;
+  executionReady: boolean;
+}
+
+export interface DeploymentArtifact {
+  id: string;
+  kind: "terraform" | "ansible" | "checklist";
+  title: string;
+  summary: string;
+  preview: string;
+}
+
+export interface DeploymentExecution {
+  id: string;
+  provider: "aws";
+  mode: "dry_run" | "apply";
+  status: RunStatus;
+  triggeredBy: string;
+  summary: string;
+  createdAt: string;
+  nextSteps: string[];
+}
+
+export interface DeploymentPlan {
+  projectId: string;
+  executionState: "blocked" | "ready" | "in_progress" | "succeeded";
+  founderSummary: string;
+  recommendedPlatform: PlatformRecommendation;
+  platformOptions: PlatformRecommendation[];
+  requiredActions: string[];
+  artifacts: DeploymentArtifact[];
+  lastExecution?: DeploymentExecution;
+}
+
+export interface ObservabilityTrace {
+  id: string;
+  stageKey: PipelineSummary["pipelineKey"];
+  agentKey: string;
+  title: string;
+  status: RunStatus;
+  summary: string;
+  confidence: number;
+  latencyMs: number;
+  evidenceCount: number;
+  warnings: string[];
+  evaluationSummary: string;
+  questionCheckpoint?: string;
 }
 
 export interface FinalRecommendation {

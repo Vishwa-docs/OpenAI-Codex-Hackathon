@@ -53,7 +53,7 @@ export default async function DemoPage() {
             title="Push the MTC dummy project into a GitHub repo and hand off into the cockpit."
             description="This page is intentionally task-first. It turns the bundled LegacyCart seed into a single demonstrable workflow instead of a presenter script."
             action={
-              <Link href="/projects/legacycart" className="rounded-full border border-white/10 px-5 py-3 text-sm font-medium text-white">
+              <Link href="/projects/legacycart" className="inline-flex items-center justify-center rounded-full border border-white/12 bg-white/[0.04] px-6 py-3 text-sm font-medium text-white transition hover:bg-white/[0.08]">
                 Skip to cockpit
               </Link>
             }

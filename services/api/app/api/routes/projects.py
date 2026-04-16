@@ -6,8 +6,8 @@ from fastapi.responses import Response
 from ...dependencies import get_orchestrator, get_report_exporter
 from ...domain.models import (
     AgentRun,
-    ApprovalRecord,
     ApprovalDecision,
+    ApprovalRecord,
     ArtifactFormat,
     AssessmentRun,
     AssessmentRunCreate,
@@ -26,11 +26,11 @@ from ...domain.models import (
     RegistryEntry,
     Report,
     ReportArtifact,
-    SourceConnection,
-    SourceConnectionCreate,
     RiskComplianceSummary,
     Scenario,
     ScenarioDiff,
+    SourceConnection,
+    SourceConnectionCreate,
 )
 from ...services.orchestration import AssessmentOrchestrator
 from ...services.reporting import ReportExporter

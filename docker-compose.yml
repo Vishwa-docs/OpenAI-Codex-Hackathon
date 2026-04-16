@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_DB: cockpit
       POSTGRES_USER: cockpit
@@ -28,6 +28,12 @@ services:
       - "9001:9001"
     volumes:
       - minio-data:/data
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
 
 volumes:
   postgres-data:

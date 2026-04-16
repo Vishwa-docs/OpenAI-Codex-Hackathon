@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from typing import Literal
 
 Severity = Literal["critical", "high", "medium", "low"]
@@ -11,6 +11,19 @@ ScenarioKind = Literal["security_first", "lift_shift_guardrails", "strangler_mod
 SourceKind = Literal["local_directory", "git_repository", "archive"]
 PipelineStatus = Literal["pending", "running", "succeeded", "failed", "skipped"]
 ConnectorKind = Literal["github", "azure_repos"]
+
+
+def to_camel(value: str) -> str:
+    parts = value.split("_")
+    return parts[0] + "".join(part.capitalize() for part in parts[1:])
+
+
+def camelize(value):
+    if isinstance(value, list):
+        return [camelize(item) for item in value]
+    if isinstance(value, dict):
+        return {to_camel(key): camelize(item) for key, item in value.items()}
+    return value
 
 
 @dataclass(slots=True)
@@ -160,10 +173,10 @@ class ScanSummary:
 
 
 @dataclass(slots=True)
-class ScanResult:
+class UpstreamScanRecord:
+    project_id: str
     scan_id: str
-    target_name: str
-    root_path: str
+    scan_version: str
     source: SourceMetadata
     pipelines: list[PipelinePhase]
     connector_handoffs: list[ConnectorHandoff]
@@ -176,8 +189,48 @@ class ScanResult:
     summary: ScanSummary
 
     def to_dict(self) -> dict:
+        return camelize(asdict(self))
+
+
+@dataclass(slots=True)
+class ScanResult:
+    scan_id: str
+    target_name: str
+    root_path: str
+    project_id: str | None
+    source: SourceMetadata
+    pipelines: list[PipelinePhase]
+    connector_handoffs: list[ConnectorHandoff]
+    evidence: list[Evidence]
+    components: list[Component]
+    dependencies: list[DependencyEdge]
+    findings: list[Finding]
+    recommendations: list[Recommendation]
+    scenarios: list[Scenario]
+    summary: ScanSummary
+
+    def to_upstream_record(self, project_id: str | None = None) -> dict:
+        upstream_project_id = project_id or self.project_id or self.target_name.lower()
+        return UpstreamScanRecord(
+            project_id=upstream_project_id,
+            scan_id=self.scan_id,
+            scan_version="mvp-2",
+            source=self.source,
+            pipelines=self.pipelines,
+            connector_handoffs=self.connector_handoffs,
+            evidence=self.evidence,
+            components=self.components,
+            dependencies=self.dependencies,
+            findings=self.findings,
+            recommendations=self.recommendations,
+            scenarios=self.scenarios,
+            summary=self.summary,
+        ).to_dict()
+
+    def to_dict(self) -> dict:
         return {
             "scan_id": self.scan_id,
+            "project_id": self.project_id,
             "target": {
                 "name": self.target_name,
                 "root_path": self.root_path,
@@ -193,4 +246,5 @@ class ScanResult:
             "recommendations": [item.to_dict() for item in self.recommendations],
             "scenarios": [item.to_dict() for item in self.scenarios],
             "summary": self.summary.to_dict(),
+            "upstream_record": self.to_upstream_record(),
         }

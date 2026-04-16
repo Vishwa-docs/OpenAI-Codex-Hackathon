@@ -38,7 +38,7 @@ ReportKind = Literal[
 ArtifactFormat = Literal["json", "markdown", "pdf", "mermaid", "hcl"]
 RegistryKind = Literal["agent", "tool", "connector"]
 RegistryStatus = Literal["enabled", "disabled", "proposed"]
-ConnectionStatus = Literal["connected", "needs_attention", "proposed", "disabled"]
+ConnectionStatus = Literal["connected", "needs_attention", "needs_configuration", "proposed", "disabled"]
 PipelineStatus = Literal["queued", "running", "blocked", "succeeded", "failed"]
 CredentialKind = Literal["token", "oauth", "assumed_role", "access_key", "none"]
 PipelineKey = Literal[
@@ -49,6 +49,7 @@ PipelineKey = Literal[
     "report_composition",
     "evals_governance",
 ]
+TenantMode = Literal["demo", "standard"]
 
 
 class EvidenceLocator(ApiModel):
@@ -352,6 +353,56 @@ class ProjectOverview(ApiModel):
     phase: str
     status: str
     recommended_provider: str
+
+
+class UserProfile(ApiModel):
+    id: str
+    email: str
+    name: str
+    active_organization_id: str | None = None
+
+
+class OrganizationSummary(ApiModel):
+    id: str
+    name: str
+    slug: str
+    mode: TenantMode
+
+
+class WorkspaceSummary(ApiModel):
+    id: str
+    organization_id: str
+    name: str
+    slug: str
+    mode: TenantMode
+    project_count: int
+
+
+class ClientAccountSummary(ApiModel):
+    id: str
+    workspace_id: str
+    name: str
+    industry: str
+    primary_region: str
+    compliance_tags: list[str] = Field(default_factory=list)
+
+
+class WorkspaceContext(ApiModel):
+    organization: OrganizationSummary
+    workspace: WorkspaceSummary
+    client_accounts: list[ClientAccountSummary]
+    projects: list[ProjectOverview]
+
+
+class ProjectCreate(ApiModel):
+    name: str
+    client_name: str
+    source_system: str
+    target_system: str
+    business_summary: str
+    owner: str
+    primary_region: str
+    compliance_tags: list[str] = Field(default_factory=list)
 
 
 class DashboardSummary(ApiModel):

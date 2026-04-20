@@ -9,7 +9,7 @@ export function MarketingShell({ children }: { children: ReactNode }) {
       <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.16),transparent_35%),radial-gradient(circle_at_bottom_right,rgba(59,130,246,0.14),transparent_40%)]" />
       <header className="sticky top-0 z-40 border-b border-white/10 bg-ink-950/80 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-8">
-          <Link href="/" className="text-sm font-semibold tracking-[0.25em] text-white">
+          <Link href="/" className="text-lg font-semibold tracking-[0.25em] text-white">
             CLOUD MIGRATION COCKPIT
           </Link>
           <nav className="hidden items-center gap-1 md:flex">
